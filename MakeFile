@@ -1,0 +1,201 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Synthora Vault  —  Makefile
+# ─────────────────────────────────────────────────────────────────────────────
+# Usage: make <target>
+#
+# Prerequisites: Foundry installed (https://getfoundry.sh)
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: all install build clean test test-unit test-fuzz test-invariant \
+        test-integration test-security test-upgrade test-coverage \
+        snapshot gas-report deploy-dry deploy upgrade-dry upgrade \
+        status fmt lint slither
+
+# ── Colours ──────────────────────────────────────────────────────────────────
+GREEN  := \033[0;32m
+YELLOW := \033[0;33m
+RED    := \033[0;31m
+RESET  := \033[0m
+
+# ── Defaults ─────────────────────────────────────────────────────────────────
+FUZZ_RUNS     ?= 1000
+INVARIANT_RUNS?= 256
+CHAIN         ?= arbitrum
+RPC_URL       ?= $(ARBITRUM_RPC_URL)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SETUP
+# ─────────────────────────────────────────────────────────────────────────────
+
+all: install build test
+
+## install: Install all Foundry dependencies
+install:
+	@echo "$(GREEN)Installing dependencies...$(RESET)"
+	forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.0.2 --no-commit
+	forge install OpenZeppelin/openzeppelin-contracts@v5.0.2 --no-commit
+	forge install foundry-rs/forge-std --no-commit
+	@echo "$(GREEN)Done.$(RESET)"
+
+## build: Compile all contracts
+build:
+	@echo "$(GREEN)Building...$(RESET)"
+	forge build --sizes
+	@echo "$(GREEN)Build complete.$(RESET)"
+
+## clean: Remove all build artefacts
+clean:
+	@echo "$(YELLOW)Cleaning...$(RESET)"
+	forge clean
+	rm -rf cache out
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TESTING
+# ─────────────────────────────────────────────────────────────────────────────
+
+## test: Run the full test suite
+test:
+	@echo "$(GREEN)Running all tests...$(RESET)"
+	forge test -vv
+
+## test-unit: Run only unit tests
+test-unit:
+	@echo "$(GREEN)Running unit tests...$(RESET)"
+	forge test --match-contract "UnitTest_" -vvv
+
+## test-fuzz: Run fuzz tests with high run count
+test-fuzz:
+	@echo "$(GREEN)Running fuzz tests ($(FUZZ_RUNS) runs)...$(RESET)"
+	forge test --match-contract "FuzzTest_" --fuzz-runs $(FUZZ_RUNS) -vv
+
+## test-invariant: Run invariant tests
+test-invariant:
+	@echo "$(GREEN)Running invariant tests...$(RESET)"
+	forge test --match-contract "InvariantTest_" -vv
+
+## test-integration: Run integration tests
+test-integration:
+	@echo "$(GREEN)Running integration tests...$(RESET)"
+	forge test --match-contract "IntegrationTest_" -vvv
+
+## test-security: Run security/edge-case tests
+test-security:
+	@echo "$(GREEN)Running security tests...$(RESET)"
+	forge test --match-contract "SecurityTest_" -vvv
+
+## test-upgrade: Run upgrade safety tests
+test-upgrade:
+	@echo "$(GREEN)Running upgrade tests...$(RESET)"
+	forge test --match-contract "UpgradeSafetyTest" -vvv
+
+## test-fork: Run tests against a live fork (requires RPC_URL)
+test-fork:
+	@echo "$(GREEN)Running fork tests against $(CHAIN)...$(RESET)"
+	forge test --fork-url $(RPC_URL) -vv
+
+## test-coverage: Generate HTML coverage report
+test-coverage:
+	@echo "$(GREEN)Generating coverage report...$(RESET)"
+	forge coverage --report lcov
+	genhtml lcov.info -o coverage-report --branch-coverage
+	@echo "$(GREEN)Coverage report at coverage-report/index.html$(RESET)"
+
+## snapshot: Create/update gas snapshot
+snapshot:
+	forge snapshot
+
+## gas-report: Print gas usage table
+gas-report:
+	forge test --gas-report
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CODE QUALITY
+# ─────────────────────────────────────────────────────────────────────────────
+
+## fmt: Format Solidity files with forge fmt
+fmt:
+	forge fmt
+
+## lint: Check formatting without writing
+lint:
+	forge fmt --check
+
+## storage-layout: Print storage layout for upgrade diff
+storage-layout:
+	@echo "$(GREEN)SynthoraVault storage layout:$(RESET)"
+	forge inspect src/SynthoraVault.sol:SynthoraVault storage-layout --pretty
+
+## abi: Export ABI to out/abi/
+abi:
+	mkdir -p out/abi
+	forge inspect src/SynthoraVault.sol:SynthoraVault abi > out/abi/SynthoraVault.json
+	@echo "$(GREEN)ABI exported to out/abi/SynthoraVault.json$(RESET)"
+
+## slither: Run Slither static analyser (requires: pip install slither-analyzer)
+slither:
+	@echo "$(YELLOW)Running Slither...$(RESET)"
+	slither src/SynthoraVault.sol \
+	    --solc-remaps "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/ @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/" \
+	    --filter-paths "lib/"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DEPLOYMENT
+# ─────────────────────────────────────────────────────────────────────────────
+
+## deploy-dry: Simulate deployment (no broadcast)
+deploy-dry:
+	@echo "$(YELLOW)Simulating deployment on $(CHAIN)...$(RESET)"
+	forge script script/DeploySynthoraVault.s.sol \
+	    --rpc-url $(RPC_URL) \
+	    -vvvv
+
+## deploy: Deploy to $(CHAIN) with verification
+deploy:
+	@echo "$(RED)Deploying to LIVE $(CHAIN)...$(RESET)"
+	@read -p "Are you sure? (yes/no): " confirm && [ "$$confirm" = "yes" ] || exit 1
+	forge script script/DeploySynthoraVault.s.sol \
+	    --rpc-url $(RPC_URL) \
+	    --broadcast \
+	    --verify \
+	    --etherscan-api-key $(ETHERSCAN_API_KEY) \
+	    -vvvv
+
+## upgrade-dry: Simulate upgrade (no broadcast)
+upgrade-dry:
+	@echo "$(YELLOW)Simulating upgrade on $(CHAIN)...$(RESET)"
+	forge script script/UpgradeSynthoraVault.s.sol \
+	    --rpc-url $(RPC_URL) \
+	    -vvvv
+
+## upgrade: Upgrade implementation on $(CHAIN)
+upgrade:
+	@echo "$(RED)Upgrading on LIVE $(CHAIN)...$(RESET)"
+	@read -p "Have you run the storage-layout diff? (yes/no): " confirm && [ "$$confirm" = "yes" ] || exit 1
+	forge script script/UpgradeSynthoraVault.s.sol \
+	    --rpc-url $(RPC_URL) \
+	    --broadcast \
+	    --verify \
+	    --etherscan-api-key $(ETHERSCAN_API_KEY) \
+	    -vvvv
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INTERACTIONS
+# ─────────────────────────────────────────────────────────────────────────────
+
+## status: Print live vault status report (read-only)
+status:
+	forge script script/Interactions.s.sol:VaultStatusReport \
+	    --sig "run()" \
+	    --rpc-url $(RPC_URL) \
+	    -vvv
+
+## collect-fees: Collect accrued management fees
+collect-fees:
+	forge script script/Interactions.s.sol:CollectFeesAction \
+	    --sig "run()" \
+	    --rpc-url $(RPC_URL) \
+	    --broadcast -vvv
+
+## help: Print this message
+help:
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## /  /'
