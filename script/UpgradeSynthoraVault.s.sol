@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-
-
 import {Script, console2} from "forge-std/Script.sol";
-import {SynthoraVault}    from "../src/SynthoraVault.sol";
+import {SynthoraVault} from "../src/SynthoraVault.sol";
 // Import the new version when it exists:
 // import {SynthoraVaultV2} from "../src/SynthoraVaultV2.sol";
 
 contract UpgradeSynthoraVault is Script {
-
     // ─── New implementation placeholder ──────────────────────────────────────
     // Replace with the actual V2 contract when the upgrade is ready.
     // For now this script re-deploys V1 (no-op upgrade) as a demonstration.
@@ -17,12 +14,12 @@ contract UpgradeSynthoraVault is Script {
 
     function run() external {
         // ── Load environment ─────────────────────────────────────────────────
-        uint256 upgraderKey      = vm.envUint("UPGRADER_PRIVATE_KEY");
-        address upgraderAddr     = vm.addr(upgraderKey);
-        address proxyAddr        = vm.envAddress("SYNTHORA_PROXY");
-        uint256 expectedOldVer   = vm.envOr("EXPECTED_OLD_VERSION", uint256(1));
+        uint256 upgraderKey = vm.envUint("UPGRADER_PRIVATE_KEY");
+        address upgraderAddr = vm.addr(upgraderKey);
+        address proxyAddr = vm.envAddress("SYNTHORA_PROXY");
+        uint256 expectedOldVer = vm.envOr("EXPECTED_OLD_VERSION", uint256(1));
 
-        console2.log("=== Synthora Vault Upgrade ===");
+        // console2.log("=== Synthora Vault Upgrade ===");
         console2.log("Upgrader     :", upgraderAddr);
         console2.log("Proxy        :", proxyAddr);
 
@@ -38,7 +35,7 @@ contract UpgradeSynthoraVault is Script {
         // IMPORTANT: The new impl's constructor MUST call _disableInitializers().
         // Replace `SynthoraVault` with `SynthoraVaultV2` for a real upgrade.
         SynthoraVault newImpl = new SynthoraVault();
-        address newImplAddr   = address(newImpl);
+        address newImplAddr = address(newImpl);
         console2.log("New implementation     :", newImplAddr);
 
         // ── Step 2: Verify new impl version is higher ─────────────────────────
@@ -68,8 +65,8 @@ contract UpgradeSynthoraVault is Script {
         // ── Post-upgrade checks (read-only) ───────────────────────────────────
         _postUpgradeChecks(proxy, newImplAddr, expectedOldVer);
 
-        console2.log("\n=== UPGRADE COMPLETE ===");
-        console2.log("Old impl (keep for rollback) — save this address!");
+        console2.log("\n UPGRADE COMPLETE ");
+        console2.log("Old impl (keep for rollback)  save this address!");
         console2.log("New impl :", newImplAddr);
         console2.log("Proxy    :", proxyAddr);
     }
@@ -81,37 +78,24 @@ contract UpgradeSynthoraVault is Script {
      *      Run these against a mainnet fork first:
      *        forge script ... --fork-url $ARBITRUM_RPC_URL
      */
-    function _preUpgradeChecks(
-        SynthoraVault proxy,
-        address upgrader,
-        uint256 expectedVersion
-    ) internal view {
+    function _preUpgradeChecks(SynthoraVault proxy, address upgrader, uint256 expectedVersion) internal view {
         // 1. Caller holds UPGRADER_ROLE
-        require(
-            proxy.hasRole(proxy.UPGRADER_ROLE(), upgrader),
-            "PRE: upgrader lacks UPGRADER_ROLE"
-        );
+        require(proxy.hasRole(proxy.UPGRADER_ROLE(), upgrader), "PRE: upgrader lacks UPGRADER_ROLE");
 
         // 2. Proxy is not paused (upgrade during a pause is risky — users can't exit)
         //    Relax this check only if the upgrade IS the emergency fix.
         //    require(!proxy.paused(), "PRE: vault is paused — unpause before upgrading");
 
         // 3. Current version matches expectation (prevents double-upgrade)
-        require(
-            proxy.version() == expectedVersion,
-            "PRE: version mismatch — already upgraded or wrong proxy?"
-        );
+        require(proxy.version() == expectedVersion, "PRE: version mismatch : already upgraded or wrong proxy?");
 
         // 4. No emergency mode
-        require(
-            !proxy.emergencyMode(),
-            "PRE: emergency mode active — resolve before upgrading"
-        );
+        require(!proxy.emergencyMode(), "PRE: emergency mode active  resolve before upgrading");
 
         // 5. Basic invariant: totalAssets >= totalCollateralLocked
         require(
             proxy.totalAssets() >= proxy.totalCollateralLocked(),
-            "PRE: totalAssets < collateralLocked — vault is insolvent!"
+            "PRE: totalAssets < collateralLocked : vault is insolvent!"
         );
 
         console2.log("Pre-upgrade checks PASSED");
@@ -121,11 +105,7 @@ contract UpgradeSynthoraVault is Script {
      * @dev Assertions that must pass AFTER the upgrade tx is mined.
      *      Critical state must be identical to pre-upgrade.
      */
-    function _postUpgradeChecks(
-        SynthoraVault proxy,
-        address newImplAddr,
-        uint256 oldVersion
-    ) internal view {
+    function _postUpgradeChecks(SynthoraVault proxy, address newImplAddr, uint256 oldVersion) internal view {
         // 1. ERC-1967 implementation slot points to the new impl
         //    (OpenZeppelin's ERC1967Utils.getImplementation reads slot directly)
         bytes32 implSlot = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
@@ -140,10 +120,7 @@ contract UpgradeSynthoraVault is Script {
         oldVersion; // suppress unused warning for this demo
 
         // 3. All roles are still intact
-        require(
-            proxy.hasRole(proxy.DEFAULT_ADMIN_ROLE(), proxy.owner()),
-            "POST: admin role lost"
-        );
+        require(proxy.hasRole(proxy.DEFAULT_ADMIN_ROLE(), proxy.owner()), "POST: admin role lost");
 
         // 4. State variables still readable (storage layout intact)
         proxy.totalAssets();

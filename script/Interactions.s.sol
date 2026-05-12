@@ -36,8 +36,8 @@ pragma solidity ^0.8.28;
  */
 
 import {Script, console2} from "forge-std/Script.sol";
-import {IERC20}           from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SynthoraVault}    from "../src/SynthoraVault.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SynthoraVault} from "../src/SynthoraVault.sol";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared base
@@ -45,9 +45,9 @@ import {SynthoraVault}    from "../src/SynthoraVault.sol";
 
 abstract contract InteractionBase is Script {
     SynthoraVault internal vault;
-    IERC20        internal usdc;
-    uint256       internal callerKey;
-    address       internal caller;
+    IERC20 internal usdc;
+    uint256 internal callerKey;
+    address internal caller;
 
     /// @dev Well-known Pyth feed IDs (Arbitrum mainnet)
     bytes32 internal constant AAPL = 0x49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688;
@@ -57,11 +57,11 @@ abstract contract InteractionBase is Script {
 
     modifier setup() {
         callerKey = vm.envUint("ACTION_PRIVATE_KEY");
-        caller    = vm.addr(callerKey);
-        vault     = SynthoraVault(vm.envAddress("SYNTHORA_PROXY"));
-        usdc      = IERC20(vm.envAddress("USDC_ADDRESS"));
+        caller = vm.addr(callerKey);
+        vault = SynthoraVault(vm.envAddress("SYNTHORA_PROXY"));
+        usdc = IERC20(vm.envAddress("USDC_ADDRESS"));
 
-        console2.log("=== Synthora Interaction ===");
+        console2.log(" Synthora Interaction ");
         console2.log("Caller  :", caller);
         console2.log("Vault   :", address(vault));
         console2.log("TVL     :", vault.totalAssets());
@@ -190,13 +190,10 @@ contract EmergencyWithdrawAction is InteractionBase {
  *   TYPE       = 0           (fixed leverage)
  */
 contract OpenPositionAction is InteractionBase {
-    function run(
-        bytes32 assetId,
-        uint128 collateralUsd,
-        uint32  leverageBps,
-        bool    isLong,
-        uint8   strategyType
-    ) external setup {
+    function run(bytes32 assetId, uint128 collateralUsd, uint32 leverageBps, bool isLong, uint8 strategyType)
+        external
+        setup
+    {
         console2.log("Opening position:");
         console2.log("  Asset     :", uint256(assetId));
         console2.log("  Collateral:", collateralUsd);
@@ -214,7 +211,7 @@ contract OpenPositionAction is InteractionBase {
         console2.log("  Liq price  :", liqPrice);
 
         // Vault metrics before
-        (uint256 util,,uint256 openPos, uint256 liquid) = vault.getVaultMetrics();
+        (uint256 util,, uint256 openPos, uint256 liquid) = vault.getVaultMetrics();
         console2.log("Vault utilization:", util, "bps");
         console2.log("Open positions   :", openPos);
         console2.log("Available liquid :", liquid);
@@ -222,10 +219,8 @@ contract OpenPositionAction is InteractionBase {
         require(collateralUsd <= liquid, "Insufficient vault liquidity");
 
         vm.startBroadcast(callerKey);
-        uint256 positionId = vault.executeStrategy(
-            assetId, collateralUsd, leverageBps, isLong, strategyType,
-            minPrice, maxPrice
-        );
+        uint256 positionId =
+            vault.executeStrategy(assetId, collateralUsd, leverageBps, isLong, strategyType, minPrice, maxPrice);
         vm.stopBroadcast();
 
         console2.log("Position opened  :", positionId);
@@ -395,9 +390,13 @@ contract RebalanceAction is InteractionBase {
  */
 contract VaultStatusReport is InteractionBase {
     function run() external setup {
-        console2.log("\n╔══════════════════════════════════╗");
-        console2.log("║   SYNTHORA VAULT STATUS REPORT   ║");
-        console2.log("╚══════════════════════════════════╝\n");
+        // console2.log(
+        //     "\n╔══════════════════════════════════╗"
+        // );
+        console2.log("  SYNTHORA VAULT STATUS REPORT ");
+        // console2.log(
+        //     "╚══════════════════════════════════╝\n"
+        // );
 
         // ── ERC-4626 basics ──────────────────────────────────────────────────
         console2.log("--- ERC-4626 ---");
@@ -457,12 +456,7 @@ contract VaultStatusReport is InteractionBase {
  *       --rpc-url $ARBITRUM_RPC_URL --broadcast -vvvv
  */
 contract SetFeesAction is InteractionBase {
-    function run(
-        uint32 perfFeeBps,
-        uint32 mgmtFeeBps,
-        uint32 withdrawFeeBps,
-        uint32 depositFeeBps
-    ) external setup {
+    function run(uint32 perfFeeBps, uint32 mgmtFeeBps, uint32 withdrawFeeBps, uint32 depositFeeBps) external setup {
         console2.log("Setting fees:");
         console2.log("  Performance :", perfFeeBps);
         console2.log("  Management  :", mgmtFeeBps);

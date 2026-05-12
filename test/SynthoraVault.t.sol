@@ -64,15 +64,15 @@ pragma solidity ^0.8.28;
  *  genhtml lcov.info -o coverage-report
  */
 
-import {Test, stdError}    from "forge-std/Test.sol";
-import {console2}           from "forge-std/console2.sol";
-import {StdInvariant}       from "forge-std/StdInvariant.sol";
+import {Test, stdError} from "forge-std/Test.sol";
+import {console2} from "forge-std/console2.sol";
+import {StdInvariant} from "forge-std/StdInvariant.sol";
 
-import {ERC1967Proxy}       from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {IERC20}             from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {SynthoraVault}      from "../src/SynthoraVault.sol";
-import {IPyth}              from "../src/interfaces/IPyth.sol";
+import {SynthoraVault} from "../src/SynthoraVault.sol";
+import {IPyth} from "../src/interfaces/IPyth.sol";
 
 // ═════════════════════════════════════════════════════════════════════════════
 // MOCK CONTRACTS
@@ -83,9 +83,9 @@ import {IPyth}              from "../src/interfaces/IPyth.sol";
  *      Exposes a permissionless mint so tests can fund accounts freely.
  */
 contract MockUSDC {
-    string  public constant name     = "Mock USDC";
-    string  public constant symbol   = "USDC";
-    uint8   public constant decimals = 6;
+    string public constant name = "Mock USDC";
+    string public constant symbol = "USDC";
+    uint8 public constant decimals = 6;
     uint256 public totalSupply;
 
     mapping(address => uint256) public balanceOf;
@@ -95,15 +95,15 @@ contract MockUSDC {
     event Approval(address indexed owner, address indexed spender, uint256 amount);
 
     function mint(address to, uint256 amount) external {
-        totalSupply     += amount;
-        balanceOf[to]   += amount;
+        totalSupply += amount;
+        balanceOf[to] += amount;
         emit Transfer(address(0), to, amount);
     }
 
     function transfer(address to, uint256 amount) external returns (bool) {
         require(balanceOf[msg.sender] >= amount, "USDC: insufficient");
         balanceOf[msg.sender] -= amount;
-        balanceOf[to]         += amount;
+        balanceOf[to] += amount;
         emit Transfer(msg.sender, to, amount);
         return true;
     }
@@ -113,7 +113,7 @@ contract MockUSDC {
         allowance[from][msg.sender] -= amount;
         require(balanceOf[from] >= amount, "USDC: insufficient");
         balanceOf[from] -= amount;
-        balanceOf[to]   += amount;
+        balanceOf[to] += amount;
         emit Transfer(from, to, amount);
         return true;
     }
@@ -131,10 +131,10 @@ contract MockUSDC {
  */
 contract MockPyth {
     struct FeedState {
-        int64  price;
+        int64 price;
         uint64 conf;
-        int32  expo;
-        uint   publishTime;
+        int32 expo;
+        uint256 publishTime;
     }
 
     mapping(bytes32 => FeedState) public feeds;
@@ -145,7 +145,7 @@ contract MockPyth {
     }
 
     /// @notice Set a stale price with an explicit publish time.
-    function setStalePriceAt(bytes32 feedId, int64 price, uint publishTime) external {
+    function setStalePriceAt(bytes32 feedId, int64 price, uint256 publishTime) external {
         feeds[feedId] = FeedState(price, 100, -8, publishTime);
     }
 
@@ -156,7 +156,7 @@ contract MockPyth {
         return IPyth.Price(f.price, f.conf, f.expo, f.publishTime);
     }
 
-    function getPriceNoOlderThan(bytes32 id, uint age) external view returns (IPyth.Price memory) {
+    function getPriceNoOlderThan(bytes32 id, uint256 age) external view returns (IPyth.Price memory) {
         FeedState memory f = feeds[id];
         require(f.publishTime > 0, "MockPyth: feed not set");
         require(block.timestamp - f.publishTime <= age, "MockPyth: stale price");
@@ -167,7 +167,7 @@ contract MockPyth {
         return this.getPriceUnsafe(id);
     }
 
-    function getEmaPriceNoOlderThan(bytes32 id, uint age) external view returns (IPyth.Price memory) {
+    function getEmaPriceNoOlderThan(bytes32 id, uint256 age) external view returns (IPyth.Price memory) {
         return this.getPriceNoOlderThan(id, age);
     }
 
@@ -180,8 +180,13 @@ contract MockPyth {
         return feeds[id].publishTime > 0;
     }
 
-    function getValidTimePeriod() external pure returns (uint) { return 60; }
-    function getUpdateFee(bytes[] calldata) external pure returns (uint) { return 0; }
+    function getValidTimePeriod() external pure returns (uint256) {
+        return 60;
+    }
+
+    function getUpdateFee(bytes[] calldata) external pure returns (uint256) {
+        return 0;
+    }
     function updatePriceFeeds(bytes[] calldata) external payable {}
     function updatePriceFeedsIfNecessary(bytes[] calldata, bytes32[] calldata, uint64[] calldata) external payable {}
 }
@@ -196,34 +201,34 @@ contract MockPyth {
  */
 abstract contract SynthoraBase is Test {
     // ── Actors ────────────────────────────────────────────────────────────────
-    address internal admin      = makeAddr("admin");
+    address internal admin = makeAddr("admin");
     address internal strategist = makeAddr("strategist");
-    address internal keeper     = makeAddr("keeper");
-    address internal pauser     = makeAddr("pauser");
-    address internal upgrader   = makeAddr("upgrader");
-    address internal treasury   = makeAddr("treasury");
-    address internal alice      = makeAddr("alice");
-    address internal bob        = makeAddr("bob");
-    address internal carol      = makeAddr("carol");
+    address internal keeper = makeAddr("keeper");
+    address internal pauser = makeAddr("pauser");
+    address internal upgrader = makeAddr("upgrader");
+    address internal treasury = makeAddr("treasury");
+    address internal alice = makeAddr("alice");
+    address internal bob = makeAddr("bob");
+    address internal carol = makeAddr("carol");
 
     // ── Contracts (public so InvariantHandler exposes them for invariant checks) ──
-    MockUSDC      public usdc;
-    MockPyth      public pyth;
-    SynthoraVault public vault;   // proxy — use this for all calls
-    SynthoraVault internal impl;    // raw impl — only for storage-layout checks
+    MockUSDC public usdc;
+    MockPyth public pyth;
+    SynthoraVault public vault; // proxy — use this for all calls
+    SynthoraVault internal impl; // raw impl — only for storage-layout checks
 
     // ── Constants ─────────────────────────────────────────────────────────────
     bytes32 internal constant AAPL_FEED = keccak256("AAPL/USD");
     bytes32 internal constant TSLA_FEED = keccak256("TSLA/USD");
     bytes32 internal constant GOLD_FEED = keccak256("GOLD/USD");
 
-    int64   internal constant AAPL_PRICE = 185_00000000; // $185.00 (Pyth uses 8-dec integers)
-    int64   internal constant TSLA_PRICE = 245_00000000; // $245.00
-    int64   internal constant GOLD_PRICE = 2300_00000000; // $2300.00
+    int64 internal constant AAPL_PRICE = 185_00000000; // $185.00 (Pyth uses 8-dec integers)
+    int64 internal constant TSLA_PRICE = 245_00000000; // $245.00
+    int64 internal constant GOLD_PRICE = 2300_00000000; // $2300.00
 
-    uint256 internal constant DEPOSIT_1K  = 1_000 * 1e6;  // $1,000 USDC
+    uint256 internal constant DEPOSIT_1K = 1_000 * 1e6; // $1,000 USDC
     uint256 internal constant DEPOSIT_10K = 10_000 * 1e6; // $10,000 USDC
-    uint256 internal constant MIN_DEP     = 100 * 1e6;    // $100 USDC
+    uint256 internal constant MIN_DEP = 100 * 1e6; // $100 USDC
 
     bytes32 internal STRATEGIST_ROLE;
     bytes32 internal KEEPER_ROLE;
@@ -247,24 +252,23 @@ abstract contract SynthoraBase is Test {
 
         // Deploy proxy + initialize in one shot
         bytes memory init = abi.encodeCall(
-            SynthoraVault.initialize,
-            (address(usdc), address(pyth), treasury, admin, "Synthora USDC Vault", "svUSDC")
+            SynthoraVault.initialize, (address(usdc), address(pyth), treasury, admin, "Synthora USDC Vault", "svUSDC")
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), init);
         vault = SynthoraVault(address(proxy));
 
         // Cache role constants
         STRATEGIST_ROLE = vault.STRATEGIST_ROLE();
-        KEEPER_ROLE     = vault.KEEPER_ROLE();
-        PAUSER_ROLE     = vault.PAUSER_ROLE();
-        UPGRADER_ROLE   = vault.UPGRADER_ROLE();
+        KEEPER_ROLE = vault.KEEPER_ROLE();
+        PAUSER_ROLE = vault.PAUSER_ROLE();
+        UPGRADER_ROLE = vault.UPGRADER_ROLE();
 
         // Admin grants granular roles
         vm.startPrank(admin);
         vault.grantRole(STRATEGIST_ROLE, strategist);
-        vault.grantRole(KEEPER_ROLE,     keeper);
-        vault.grantRole(PAUSER_ROLE,     pauser);
-        vault.grantRole(UPGRADER_ROLE,   upgrader);
+        vault.grantRole(KEEPER_ROLE, keeper);
+        vault.grantRole(PAUSER_ROLE, pauser);
+        vault.grantRole(UPGRADER_ROLE, upgrader);
 
         // Configure oracle feeds
         vault.setOracleConfig(AAPL_FEED, AAPL_FEED, address(0), 60, 200, false);
@@ -283,8 +287,8 @@ abstract contract SynthoraBase is Test {
 
         // Fund test users
         _mintUSDC(alice, 100_000 * 1e6);
-        _mintUSDC(bob,   100_000 * 1e6);
-        _mintUSDC(carol,  50_000 * 1e6);
+        _mintUSDC(bob, 100_000 * 1e6);
+        _mintUSDC(carol, 50_000 * 1e6);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -300,22 +304,17 @@ abstract contract SynthoraBase is Test {
         vm.stopPrank();
     }
 
-    function _openPosition(
-        address caller,
-        bytes32 assetId,
-        uint128 collateral,
-        uint32  leverage,
-        bool    isLong
-    ) internal returns (uint256 positionId) {
+    function _openPosition(address caller, bytes32 assetId, uint128 collateral, uint32 leverage, bool isLong)
+        internal
+        returns (uint256 positionId)
+    {
         // Calculate price bounds with 1% slippage tolerance
         (uint128 price,,) = vault.getAssetPrice(assetId);
-        uint128 minPrice  = uint128(uint256(price) * 99 / 100);
-        uint128 maxPrice  = uint128(uint256(price) * 101 / 100);
+        uint128 minPrice = uint128(uint256(price) * 99 / 100);
+        uint128 maxPrice = uint128(uint256(price) * 101 / 100);
 
         vm.prank(caller);
-        positionId = vault.executeStrategy(
-            assetId, collateral, leverage, isLong, 0, minPrice, maxPrice
-        );
+        positionId = vault.executeStrategy(assetId, collateral, leverage, isLong, 0, minPrice, maxPrice);
     }
 
     /// @dev Warp time forward and refresh oracle prices so staleness check passes.
@@ -338,26 +337,23 @@ contract UnitTest_Initialization is SynthoraBase {
      */
     function test_impl_cannotBeInitialized() public {
         vm.expectRevert(); // InvalidInitialization
-        impl.initialize(
-            address(usdc), address(pyth), treasury, admin,
-            "X", "X"
-        );
+        impl.initialize(address(usdc), address(pyth), treasury, admin, "X", "X");
     }
 
     function test_proxy_initializedCorrectly() public view {
-        assertEq(vault.asset(),                 address(usdc));
-        assertEq(address(vault.pythOracle()),   address(pyth));
-        assertEq(vault.treasury(),              treasury);
-        assertEq(vault.owner(),                 admin);
-        assertEq(vault.name(),                  "Synthora USDC Vault");
-        assertEq(vault.symbol(),                "svUSDC");
-        assertEq(vault.decimals(),              18); // ERC-4626 share decimals
-        assertEq(vault.totalAssets(),           0);
-        assertEq(vault.totalSupply(),           0);
-        assertEq(vault.sharePrice(),            1e18);
-        assertEq(vault.highWaterMark(),         1e18);
-        assertEq(vault.minDepositAmount(),      100e6);
-        assertEq(vault.version(),               1);
+        assertEq(vault.asset(), address(usdc));
+        assertEq(address(vault.pythOracle()), address(pyth));
+        assertEq(vault.treasury(), treasury);
+        assertEq(vault.owner(), admin);
+        assertEq(vault.name(), "Synthora USDC Vault");
+        assertEq(vault.symbol(), "svUSDC");
+        assertEq(vault.decimals(), 18); // ERC-4626 share decimals
+        assertEq(vault.totalAssets(), 0);
+        assertEq(vault.totalSupply(), 0);
+        assertEq(vault.sharePrice(), 1e18);
+        assertEq(vault.highWaterMark(), 1e18);
+        assertEq(vault.minDepositAmount(), 100e6);
+        assertEq(vault.version(), 1);
         assertFalse(vault.emergencyMode());
         assertFalse(vault.depositsLocked());
     }
@@ -369,10 +365,10 @@ contract UnitTest_Initialization is SynthoraBase {
 
     function test_roles_assignedCorrectly() public view {
         assertTrue(vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), admin));
-        assertTrue(vault.hasRole(STRATEGIST_ROLE,            strategist));
-        assertTrue(vault.hasRole(KEEPER_ROLE,                keeper));
-        assertTrue(vault.hasRole(PAUSER_ROLE,                pauser));
-        assertTrue(vault.hasRole(UPGRADER_ROLE,              upgrader));
+        assertTrue(vault.hasRole(STRATEGIST_ROLE, strategist));
+        assertTrue(vault.hasRole(KEEPER_ROLE, keeper));
+        assertTrue(vault.hasRole(PAUSER_ROLE, pauser));
+        assertTrue(vault.hasRole(UPGRADER_ROLE, upgrader));
 
         // Untrusted addresses have no roles
         assertFalse(vault.hasRole(KEEPER_ROLE, alice));
@@ -382,43 +378,42 @@ contract UnitTest_Initialization is SynthoraBase {
     function test_defaultFeeConfig() public view {
         SynthoraVault.FeeConfig memory fc = vault.getFeeConfig();
         assertEq(fc.performanceFeeBps, 1000);
-        assertEq(fc.managementFeeBps,  200);
-        assertEq(fc.withdrawalFeeBps,  50);
-        assertEq(fc.depositFeeBps,     0);
+        assertEq(fc.managementFeeBps, 200);
+        assertEq(fc.withdrawalFeeBps, 50);
+        assertEq(fc.depositFeeBps, 0);
     }
 
     function test_defaultRiskConfig() public view {
         SynthoraVault.RiskConfig memory rc = vault.getRiskConfig();
-        assertEq(rc.minLeverageBps,          100);
-        assertEq(rc.maxLeverageBps,          2000);
-        assertEq(rc.maxPositionSizeBps,      2000);
+        assertEq(rc.minLeverageBps, 100);
+        assertEq(rc.maxLeverageBps, 2000);
+        assertEq(rc.maxPositionSizeBps, 2000);
         assertEq(rc.liquidationThresholdBps, 8500);
-        assertEq(rc.maintenanceMarginBps,    500);
-        assertEq(rc.maxOpenPositions,        20);
+        assertEq(rc.maintenanceMarginBps, 500);
+        assertEq(rc.maxOpenPositions, 20);
     }
 
     function test_zeroAddress_reverts() public {
         SynthoraVault freshImpl = new SynthoraVault();
         vm.expectRevert(SynthoraVault.ZeroAddress.selector);
-        new ERC1967Proxy(address(freshImpl), abi.encodeCall(
-            SynthoraVault.initialize,
-            (address(0), address(pyth), treasury, admin, "X", "X")
-        ));
+        new ERC1967Proxy(
+            address(freshImpl),
+            abi.encodeCall(SynthoraVault.initialize, (address(0), address(pyth), treasury, admin, "X", "X"))
+        );
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 contract UnitTest_DepositWithdraw is SynthoraBase {
-
     function test_deposit_mintsCorrectShares() public {
         uint256 shares = _approveAndDeposit(alice, DEPOSIT_1K);
 
         // With zero deposit fee and no existing shares, shares == assets (1:1 initially)
         assertEq(shares, DEPOSIT_1K);
         assertEq(vault.balanceOf(alice), shares);
-        assertEq(vault.totalAssets(),    DEPOSIT_1K);
-        assertEq(vault.totalSupply(),    DEPOSIT_1K);
+        assertEq(vault.totalAssets(), DEPOSIT_1K);
+        assertEq(vault.totalSupply(), DEPOSIT_1K);
     }
 
     function test_deposit_fee_deductedFromAssets() public {
@@ -427,25 +422,23 @@ contract UnitTest_DepositWithdraw is SynthoraBase {
         vault.setFeeConfig(1000, 200, 50, 100); // depositFee = 1%
 
         uint256 grossDeposit = DEPOSIT_1K;
-        uint256 fee          = grossDeposit / 100; // 1%
-        uint256 netAssets    = grossDeposit - fee;
+        uint256 fee = grossDeposit / 100; // 1%
+        uint256 netAssets = grossDeposit - fee;
 
         vm.startPrank(alice);
         usdc.approve(address(vault), grossDeposit);
         uint256 shares = vault.deposit(grossDeposit, alice);
         vm.stopPrank();
 
-        assertEq(usdc.balanceOf(treasury),  fee,      "treasury fee");
-        assertEq(vault.totalAssets(),        netAssets, "net assets");
+        assertEq(usdc.balanceOf(treasury), fee, "treasury fee");
+        assertEq(vault.totalAssets(), netAssets, "net assets");
         assertEq(shares, netAssets, "shares == netAssets (1:1 at start)");
     }
 
     function test_deposit_belowMinimum_reverts() public {
         vm.startPrank(alice);
         usdc.approve(address(vault), 50e6); // $50 < $100 min
-        vm.expectRevert(
-            abi.encodeWithSelector(SynthoraVault.BelowMinDeposit.selector, 50e6, 100e6)
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.BelowMinDeposit.selector, 50e6, 100e6));
         vault.deposit(50e6, alice);
         vm.stopPrank();
     }
@@ -492,9 +485,7 @@ contract UnitTest_DepositWithdraw is SynthoraBase {
 
         vm.startPrank(alice);
         usdc.approve(address(vault), DEPOSIT_1K); // $1000 > cap
-        vm.expectRevert(
-            abi.encodeWithSelector(SynthoraVault.TvlCapExceeded.selector, DEPOSIT_1K, 500e6)
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.TvlCapExceeded.selector, DEPOSIT_1K, 500e6));
         vault.deposit(DEPOSIT_1K, alice);
         vm.stopPrank();
     }
@@ -512,11 +503,11 @@ contract UnitTest_DepositWithdraw is SynthoraBase {
         vm.stopPrank();
 
         // Withdrawal fee is 0.5%
-        uint256 fee       = DEPOSIT_1K * 50 / 10_000;
-        uint256 expected  = DEPOSIT_1K - fee;
+        uint256 fee = DEPOSIT_1K * 50 / 10_000;
+        uint256 expected = DEPOSIT_1K - fee;
         assertEq(usdc.balanceOf(alice) - balBefore, expected, "withdrawal amount");
-        assertEq(usdc.balanceOf(treasury),           fee,     "treasury fee");
-        assertEq(vault.totalAssets(),                0,       "vault empty");
+        assertEq(usdc.balanceOf(treasury), fee, "treasury fee");
+        assertEq(vault.totalAssets(), 0, "vault empty");
     }
 
     function test_withdraw_flashLoanProtection_reverts() public {
@@ -524,13 +515,7 @@ contract UnitTest_DepositWithdraw is SynthoraBase {
 
         // Attempt to withdraw in the SAME block — must revert
         vm.startPrank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SynthoraVault.FlashLoanProtection.selector,
-                alice,
-                block.number + 1
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.FlashLoanProtection.selector, alice, block.number + 1));
         vault.withdraw(DEPOSIT_1K, alice, alice);
         vm.stopPrank();
     }
@@ -560,7 +545,7 @@ contract UnitTest_DepositWithdraw is SynthoraBase {
         vm.roll(block.number + 1);
 
         uint256 aliceAssets = vault.convertToAssets(vault.balanceOf(alice));
-        uint256 bobAssets   = vault.convertToAssets(vault.balanceOf(bob));
+        uint256 bobAssets = vault.convertToAssets(vault.balanceOf(bob));
 
         // Without any trading PnL, both should have ~equal value
         assertApproxEqAbs(aliceAssets, bobAssets, 10, "equal value");
@@ -573,8 +558,8 @@ contract UnitTest_DepositWithdraw is SynthoraBase {
         vm.prank(admin);
         vault.activateEmergencyMode();
 
-        uint256 shares  = vault.balanceOf(alice);
-        uint256 balPre  = usdc.balanceOf(alice);
+        uint256 shares = vault.balanceOf(alice);
+        uint256 balPre = usdc.balanceOf(alice);
 
         vm.prank(alice);
         vault.emergencyWithdraw(shares, alice);
@@ -597,7 +582,6 @@ contract UnitTest_DepositWithdraw is SynthoraBase {
 // ─────────────────────────────────────────────────────────────────────────────
 
 contract UnitTest_PositionLifecycle is SynthoraBase {
-
     uint256 constant VAULT_SEED = 50_000e6; // $50k seed in vault
 
     function setUp() public override {
@@ -608,35 +592,33 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
 
     function test_openPosition_storesCorrectly() public {
         uint128 collateral = 5_000e6; // $5,000
-        uint32  leverage   = 500;     // 5×
+        uint32 leverage = 500; // 5×
 
         uint256 pid = _openPosition(strategist, AAPL_FEED, collateral, leverage, true);
 
         SynthoraVault.Position memory pos = vault.getPosition(pid);
 
-        assertEq(pos.assetId,         AAPL_FEED);
-        assertEq(pos.collateralUsd,   collateral);
-        assertEq(pos.sizeUsd,         collateral * leverage / 100); // $25,000
-        assertEq(pos.leverageBps,     leverage);
+        assertEq(pos.assetId, AAPL_FEED);
+        assertEq(pos.collateralUsd, collateral);
+        assertEq(pos.sizeUsd, collateral * leverage / 100); // $25,000
+        assertEq(pos.leverageBps, leverage);
         assertTrue(pos.isLong);
         assertTrue(pos.isActive);
-        assertEq(pos.strategyType,    0);
-        assertGt(pos.entryPrice,      0);
+        assertEq(pos.strategyType, 0);
+        assertGt(pos.entryPrice, 0);
         assertGt(pos.liquidationPrice, 0);
         assertLt(pos.liquidationPrice, pos.entryPrice); // long: liq < entry
 
         // Global state
-        assertEq(vault.activePositionCount(),    1);
-        assertEq(vault.totalCollateralLocked(),  collateral);
-        assertEq(vault.totalNotionalValue(),     collateral * leverage / 100);
+        assertEq(vault.activePositionCount(), 1);
+        assertEq(vault.totalCollateralLocked(), collateral);
+        assertEq(vault.totalNotionalValue(), collateral * leverage / 100);
     }
 
     function test_openPosition_assetNotWhitelisted_reverts() public {
         bytes32 badAsset = keccak256("FORBIDDEN");
         vm.prank(strategist);
-        vm.expectRevert(
-            abi.encodeWithSelector(SynthoraVault.AssetNotWhitelisted.selector, badAsset)
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.AssetNotWhitelisted.selector, badAsset));
         vault.executeStrategy(badAsset, 1000e6, 500, true, 0, 0, type(uint128).max);
     }
 
@@ -645,7 +627,7 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
         vm.expectRevert(
             abi.encodeWithSelector(
                 SynthoraVault.LeverageOutOfRange.selector,
-                50,   // below minLeverageBps (100)
+                50, // below minLeverageBps (100)
                 100,
                 2000
             )
@@ -659,8 +641,8 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
         vm.expectRevert(
             abi.encodeWithSelector(
                 SynthoraVault.SlippageExceeded.selector,
-                uint128(1),              // minEntryPrice
-                uint128(10),             // maxEntryPrice
+                uint128(1), // minEntryPrice
+                uint128(10), // maxEntryPrice
                 uint128(uint64(AAPL_PRICE)) // actual
             )
         );
@@ -671,20 +653,12 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
         // Try to lock more than the vault has
         vm.prank(strategist);
         vm.expectRevert(); // InsufficientVaultLiquidity
-        vault.executeStrategy(
-            AAPL_FEED, uint128(VAULT_SEED + 1), 500, true, 0, 0, type(uint128).max
-        );
+        vault.executeStrategy(AAPL_FEED, uint128(VAULT_SEED + 1), 500, true, 0, 0, type(uint128).max);
     }
 
     function test_openPosition_requiresStrategistRole() public {
         vm.prank(alice); // alice is not a strategist
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SynthoraVault.CallerMissingRole.selector,
-                STRATEGIST_ROLE,
-                alice
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.CallerMissingRole.selector, STRATEGIST_ROLE, alice));
         vault.executeStrategy(AAPL_FEED, 1000e6, 500, true, 0, 0, type(uint128).max);
     }
 
@@ -703,11 +677,11 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
 
         SynthoraVault.Position memory posAfter = vault.getPosition(pid);
 
-        assertFalse(posAfter.isActive,                       "position closed");
-        assertEq(vault.activePositionCount(),                0,  "active count");
-        assertEq(vault.totalCollateralLocked(),              0,  "collateral freed");
-        assertEq(vault.totalNotionalValue(),                 0,  "notional cleared");
-        assertEq(vault.assetExposure(AAPL_FEED),            0,  "exposure cleared");
+        assertFalse(posAfter.isActive, "position closed");
+        assertEq(vault.activePositionCount(), 0, "active count");
+        assertEq(vault.totalCollateralLocked(), 0, "collateral freed");
+        assertEq(vault.totalNotionalValue(), 0, "notional cleared");
+        assertEq(vault.assetExposure(AAPL_FEED), 0, "exposure cleared");
 
         posBefore; // suppress unused warning
     }
@@ -718,12 +692,7 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
 
         // alice cannot close
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SynthoraVault.NotPositionOwnerOrKeeper.selector,
-                pid, alice
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.NotPositionOwnerOrKeeper.selector, pid, alice));
         vault.closePosition(pid, 0, type(uint128).max);
 
         // keeper can close
@@ -743,11 +712,11 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
 
         SynthoraVault.Position memory after_ = vault.getPosition(pid);
 
-        assertEq(after_.leverageBps, 1000,                          "new leverage");
-        assertEq(after_.sizeUsd,     before.collateralUsd * 10,     "new size"); // 10× of $5000 = $50000
-        assertGt(after_.sizeUsd,     before.sizeUsd,                "size increased");
+        assertEq(after_.leverageBps, 1000, "new leverage");
+        assertEq(after_.sizeUsd, before.collateralUsd * 10, "new size"); // 10× of $5000 = $50000
+        assertGt(after_.sizeUsd, before.sizeUsd, "size increased");
         // For a long, liquidation price with higher leverage is closer to entry
-        assertGt(after_.liquidationPrice, before.liquidationPrice,  "liq price moved up");
+        assertGt(after_.liquidationPrice, before.liquidationPrice, "liq price moved up");
     }
 
     function test_adjustLeverage_invalidLeverage_reverts() public {
@@ -776,7 +745,7 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
         vault.liquidatePosition(pid);
 
         SynthoraVault.Position memory after_ = vault.getPosition(pid);
-        assertFalse(after_.isActive,    "position inactive after liquidation");
+        assertFalse(after_.isActive, "position inactive after liquidation");
         assertTrue(after_.isLiquidatable, "liquidatable flag set");
         assertEq(vault.activePositionCount(), 0, "active count");
     }
@@ -786,9 +755,7 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
         uint256 pid = _openPosition(strategist, AAPL_FEED, 5_000e6, 500, true);
 
         vm.prank(keeper);
-        vm.expectRevert(
-            abi.encodeWithSelector(SynthoraVault.PositionNotLiquidatable.selector, pid)
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.PositionNotLiquidatable.selector, pid));
         vault.liquidatePosition(pid);
     }
 
@@ -796,12 +763,7 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
         uint256 pid = _openPosition(strategist, AAPL_FEED, 5_000e6, 500, true);
 
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SynthoraVault.CallerMissingRole.selector,
-                KEEPER_ROLE, alice
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.CallerMissingRole.selector, KEEPER_ROLE, alice));
         vault.liquidatePosition(pid);
     }
 
@@ -842,14 +804,16 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
         vm.startPrank(strategist);
         for (uint256 i; i < 20; i++) {
             (uint128 p,,) = vault.getAssetPrice(AAPL_FEED);
-            vault.executeStrategy(AAPL_FEED, 500e6, 100, true, 0,
-                uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100));
+            vault.executeStrategy(
+                AAPL_FEED, 500e6, 100, true, 0, uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100)
+            );
         }
         // 21st should revert
         (uint128 p,,) = vault.getAssetPrice(AAPL_FEED);
         vm.expectRevert(); // MaxPositionsReached
-        vault.executeStrategy(AAPL_FEED, 500e6, 100, true, 0,
-            uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100));
+        vault.executeStrategy(
+            AAPL_FEED, 500e6, 100, true, 0, uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100)
+        );
         vm.stopPrank();
     }
 }
@@ -857,39 +821,33 @@ contract UnitTest_PositionLifecycle is SynthoraBase {
 // ─────────────────────────────────────────────────────────────────────────────
 
 contract UnitTest_StrategyManagement is SynthoraBase {
-
     function test_createStrategy_storesCorrectly() public {
         vm.prank(strategist);
         uint256 sid = vault.createStrategy(
             AAPL_FEED,
-            10_000e6,  // targetSizeUsd
-            500,       // leverageBps (5×)
-            true,      // isLong
-            false,     // isNeutral
-            0,         // fixed strategy
-            2000,      // maxDrawdownBps (20%)
-            500,       // rebalanceThresholdBps
-            3000       // profitTakingBps
+            10_000e6, // targetSizeUsd
+            500, // leverageBps (5×)
+            true, // isLong
+            false, // isNeutral
+            0, // fixed strategy
+            2000, // maxDrawdownBps (20%)
+            500, // rebalanceThresholdBps
+            3000 // profitTakingBps
         );
 
         SynthoraVault.Strategy memory s = vault.getStrategy(sid);
-        assertEq(s.assetId,               AAPL_FEED);
-        assertEq(s.targetSizeUsd,         10_000e6);
-        assertEq(s.leverageBps,           500);
+        assertEq(s.assetId, AAPL_FEED);
+        assertEq(s.targetSizeUsd, 10_000e6);
+        assertEq(s.leverageBps, 500);
         assertTrue(s.isLong);
         assertTrue(s.isActive);
         assertFalse(s.isNeutral);
-        assertEq(s.strategyType,          0);
+        assertEq(s.strategyType, 0);
     }
 
     function test_createStrategy_requiresStrategist() public {
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SynthoraVault.CallerMissingRole.selector,
-                STRATEGIST_ROLE, alice
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.CallerMissingRole.selector, STRATEGIST_ROLE, alice));
         vault.createStrategy(AAPL_FEED, 10_000e6, 500, true, false, 0, 2000, 500, 3000);
     }
 
@@ -907,10 +865,10 @@ contract UnitTest_StrategyManagement is SynthoraBase {
         vm.stopPrank();
 
         SynthoraVault.Strategy memory s = vault.getStrategy(sid);
-        assertEq(s.leverageBps,           1000);
-        assertEq(s.targetSizeUsd,         20_000e6);
+        assertEq(s.leverageBps, 1000);
+        assertEq(s.targetSizeUsd, 20_000e6);
         assertEq(s.rebalanceThresholdBps, 1000);
-        assertEq(s.profitTakingBps,       5000);
+        assertEq(s.profitTakingBps, 5000);
     }
 
     function test_deactivateStrategy() public {
@@ -926,7 +884,6 @@ contract UnitTest_StrategyManagement is SynthoraBase {
 // ─────────────────────────────────────────────────────────────────────────────
 
 contract UnitTest_AccessControl is SynthoraBase {
-
     function test_pause_byPauser() public {
         vm.prank(pauser);
         vault.pause();
@@ -935,11 +892,7 @@ contract UnitTest_AccessControl is SynthoraBase {
 
     function test_pause_byNonPauser_reverts() public {
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SynthoraVault.CallerMissingRole.selector, PAUSER_ROLE, alice
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.CallerMissingRole.selector, PAUSER_ROLE, alice));
         vault.pause();
     }
 
@@ -964,14 +917,12 @@ contract UnitTest_AccessControl is SynthoraBase {
 
         SynthoraVault.FeeConfig memory fc = vault.getFeeConfig();
         assertEq(fc.performanceFeeBps, 2000);
-        assertEq(fc.managementFeeBps,  300);
+        assertEq(fc.managementFeeBps, 300);
     }
 
     function test_setFeeConfig_feeToHigh_reverts() public {
         vm.prank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(SynthoraVault.InvalidFee.selector, 4000, 3000)
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.InvalidFee.selector, 4000, 3000));
         vault.setFeeConfig(4000, 200, 50, 0); // 40% perf fee > max
     }
 
@@ -1012,11 +963,7 @@ contract UnitTest_AccessControl is SynthoraBase {
 
         // Non-upgrader cannot upgrade
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SynthoraVault.CallerMissingRole.selector, UPGRADER_ROLE, alice
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.CallerMissingRole.selector, UPGRADER_ROLE, alice));
         vault.upgradeToAndCall(address(newImpl), "");
 
         // Upgrader can upgrade
@@ -1028,7 +975,6 @@ contract UnitTest_AccessControl is SynthoraBase {
 // ─────────────────────────────────────────────────────────────────────────────
 
 contract UnitTest_OracleAndFees is SynthoraBase {
-
     function test_stalePrice_reverts() public {
         _approveAndDeposit(alice, DEPOSIT_10K);
 
@@ -1038,8 +984,9 @@ contract UnitTest_OracleAndFees is SynthoraBase {
         (uint128 p,,) = vault.getAssetPrice(AAPL_FEED); // unsafe read — still works
         vm.prank(strategist);
         vm.expectRevert(); // MockPyth: stale price (propagates as revert)
-        vault.executeStrategy(AAPL_FEED, 1000e6, 500, true, 0,
-            uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100));
+        vault.executeStrategy(
+            AAPL_FEED, 1000e6, 500, true, 0, uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100)
+        );
     }
 
     function test_managementFee_accruedOverTime() public {
@@ -1103,10 +1050,10 @@ contract UnitTest_OracleAndFees is SynthoraBase {
 
         // getVaultMetrics
         (uint256 util, uint256 exposure, uint256 open, uint256 liquid) = vault.getVaultMetrics();
-        assertGt(util, 0,     "utilization > 0");
+        assertGt(util, 0, "utilization > 0");
         assertGt(exposure, 0, "exposure > 0");
-        assertEq(open, 1,     "1 position");
-        assertGt(liquid, 0,   "some liquidity");
+        assertEq(open, 1, "1 position");
+        assertGt(liquid, 0, "some liquidity");
 
         // getUserSummary
         (uint256 shares, uint256 assets, uint256 depShares) = vault.getUserSummary(alice);
@@ -1132,7 +1079,6 @@ contract UnitTest_OracleAndFees is SynthoraBase {
 // ═════════════════════════════════════════════════════════════════════════════
 
 contract IntegrationTest_FullLifecycle is SynthoraBase {
-
     /**
      * @dev Full cycle: deposit → open position → price moves → close → withdraw.
      *      Verifies end-to-end accounting is consistent.
@@ -1147,7 +1093,7 @@ contract IntegrationTest_FullLifecycle is SynthoraBase {
         uint256 pid = _openPosition(strategist, AAPL_FEED, collateral, 500, true);
 
         SynthoraVault.Position memory pos = vault.getPosition(pid);
-        assertEq(pos.sizeUsd, collateral * 5, "5× notional");
+        assertEq(pos.sizeUsd, collateral * 5, "5x notional");
         assertEq(vault.totalCollateralLocked(), collateral);
 
         // 3. AAPL gains 5%
@@ -1156,7 +1102,7 @@ contract IntegrationTest_FullLifecycle is SynthoraBase {
 
         // Verify PnL is positive
         int256 pnl = vault.getPositionPnL(pid);
-        assertGt(pnl, 0, "5% gain on 5× = 25% profit on collateral");
+        assertGt(pnl, 0, "5% gain on 5x = 25% profit on collateral");
 
         // 4. Close position
         (uint128 exitP,,) = vault.getAssetPrice(AAPL_FEED);
@@ -1182,7 +1128,7 @@ contract IntegrationTest_FullLifecycle is SynthoraBase {
      */
     function test_integration_multiUserIsolation() public {
         uint256 aliceShares = _approveAndDeposit(alice, DEPOSIT_10K);
-        uint256 bobShares   = _approveAndDeposit(bob,   DEPOSIT_10K);
+        uint256 bobShares = _approveAndDeposit(bob, DEPOSIT_10K);
 
         vm.roll(block.number + 1);
 
@@ -1260,8 +1206,7 @@ contract IntegrationTest_FullLifecycle is SynthoraBase {
         (uint128 p,,) = vault.getAssetPrice(AAPL_FEED);
         vm.prank(strategist);
         uint256 pid = vault.executeStrategy(
-            AAPL_FEED, 2_000e6, 500, true, 2,
-            uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100)
+            AAPL_FEED, 2_000e6, 500, true, 2, uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100)
         );
 
         // Keeper signals high positive funding rate (longs pay shorts)
@@ -1279,7 +1224,6 @@ contract IntegrationTest_FullLifecycle is SynthoraBase {
 // ═════════════════════════════════════════════════════════════════════════════
 
 contract FuzzTest_SynthoraVault is SynthoraBase {
-
     /**
      * @dev Property: Shares minted on deposit are always redeemable for ≤ deposit amount.
      *      (ERC-4626 round-trip; fees mean assets_out < assets_in)
@@ -1307,19 +1251,15 @@ contract FuzzTest_SynthoraVault is SynthoraBase {
      * @dev Property: Liquidation price for a LONG is always strictly below entry price.
      *      Liquidation price for a SHORT is always strictly above entry price.
      */
-    function fuzz_LiquidationPriceConsistency(
-        uint128 entryPrice,
-        uint32  leverageBps,
-        bool    isLong
-    ) public view {
-        entryPrice  = uint128(bound(entryPrice,  1e6, 1_000_000e8)); // $1 – $1M
-        leverageBps = uint32(bound(leverageBps,  100, 2000));        // 1× – 20×
+    function fuzz_LiquidationPriceConsistency(uint128 entryPrice, uint32 leverageBps, bool isLong) public view {
+        entryPrice = uint128(bound(entryPrice, 1e6, 1_000_000e8)); // $1 – $1M
+        leverageBps = uint32(bound(leverageBps, 100, 2000)); // 1× – 20×
 
         uint128 liqPrice = vault.previewLiquidationPrice(entryPrice, leverageBps, isLong);
 
         if (isLong) {
             assertLt(liqPrice, entryPrice, "long: liq < entry");
-            assertGt(liqPrice, 0,          "long: liq > 0");
+            assertGt(liqPrice, 0, "long: liq > 0");
         } else {
             assertGt(liqPrice, entryPrice, "short: liq > entry");
         }
@@ -1334,12 +1274,12 @@ contract FuzzTest_SynthoraVault is SynthoraBase {
         entryPrice = uint128(bound(uint256(entryPrice), 1e6, 1_000_000e6));
 
         uint32 leverage = 500; // 5×
-        uint128 liqLong  = vault.previewLiquidationPrice(entryPrice, leverage, true);
+        uint128 liqLong = vault.previewLiquidationPrice(entryPrice, leverage, true);
         uint128 liqShort = vault.previewLiquidationPrice(entryPrice, leverage, false);
 
         // Distance from entry should be equal for both (symmetric around entry)
-        uint256 distLong  = uint256(entryPrice) - uint256(liqLong);
-        uint256 distShort = uint256(liqShort)   - uint256(entryPrice);
+        uint256 distLong = uint256(entryPrice) - uint256(liqLong);
+        uint256 distShort = uint256(liqShort) - uint256(entryPrice);
 
         assertApproxEqAbs(distLong, distShort, 2, "symmetric liquidation distance");
     }
@@ -1349,16 +1289,16 @@ contract FuzzTest_SynthoraVault is SynthoraBase {
      */
     function fuzz_FeeNeverExceedsDeposit(
         uint256 depositAmount,
-        uint32  perfFee,
-        uint32  mgmtFee,
-        uint32  withdrawFee,
-        uint32  depositFee
+        uint32 perfFee,
+        uint32 mgmtFee,
+        uint32 withdrawFee,
+        uint32 depositFee
     ) public {
         depositAmount = bound(depositAmount, MIN_DEP, 10_000_000 * 1e6);
-        perfFee       = uint32(bound(perfFee,       0, 3000));
-        mgmtFee       = uint32(bound(mgmtFee,       0, 1000));
-        withdrawFee   = uint32(bound(withdrawFee,   0, 500));
-        depositFee    = uint32(bound(depositFee,    0, 500));
+        perfFee = uint32(bound(perfFee, 0, 3000));
+        mgmtFee = uint32(bound(mgmtFee, 0, 1000));
+        withdrawFee = uint32(bound(withdrawFee, 0, 500));
+        depositFee = uint32(bound(depositFee, 0, 500));
 
         vm.prank(admin);
         vault.setFeeConfig(perfFee, mgmtFee, withdrawFee, depositFee);
@@ -1368,7 +1308,7 @@ contract FuzzTest_SynthoraVault is SynthoraBase {
         (uint256 previewShares, uint256 previewFee) = vault.previewDepositAfterFee(depositAmount);
 
         assertLe(previewFee, depositAmount, "fee <= deposit");
-        assertGe(previewShares, 0,          "shares >= 0");
+        assertGe(previewShares, 0, "shares >= 0");
     }
 
     /**
@@ -1386,9 +1326,7 @@ contract FuzzTest_SynthoraVault is SynthoraBase {
         _openPosition(strategist, AAPL_FEED, uint128(collateralAmount), 100, true); // 1× = no leverage risk
 
         assertLe(
-            vault.totalCollateralLocked(),
-            IERC20(address(usdc)).balanceOf(address(vault)),
-            "collateral <= USDC balance"
+            vault.totalCollateralLocked(), IERC20(address(usdc)).balanceOf(address(vault)), "collateral <= USDC balance"
         );
     }
 
@@ -1396,27 +1334,24 @@ contract FuzzTest_SynthoraVault is SynthoraBase {
      * @dev Property: All leverage values within [minLevBps, maxLevBps] produce a
      *      valid (non-zero) liquidation price for any reasonable entry price.
      */
-    function fuzz_ValidLeverageProducesValidLiqPrice(
-        uint32  leverageBps,
-        uint128 entryPrice
-    ) public view {
-        leverageBps = uint32(bound(leverageBps, 100,  2000));
-        entryPrice  = uint128(bound(entryPrice, 1e3,  type(uint64).max)); // avoid uint128 overflow
+    function fuzz_ValidLeverageProducesValidLiqPrice(uint32 leverageBps, uint128 entryPrice) public view {
+        leverageBps = uint32(bound(leverageBps, 100, 2000));
+        entryPrice = uint128(bound(entryPrice, 1e3, type(uint64).max)); // avoid uint128 overflow
 
-        uint128 liqLong  = vault.previewLiquidationPrice(entryPrice, leverageBps, true);
+        uint128 liqLong = vault.previewLiquidationPrice(entryPrice, leverageBps, true);
         uint128 liqShort = vault.previewLiquidationPrice(entryPrice, leverageBps, false);
 
-        assertGt(liqLong, 0,          "long liq price > 0");
+        assertGt(liqLong, 0, "long liq price > 0");
         assertGt(liqShort, entryPrice, "short liq price > entry");
-        assertLt(liqLong,  entryPrice, "long liq price < entry");
+        assertLt(liqLong, entryPrice, "long liq price < entry");
     }
 
     /**
      * @dev Property: maxDeposit respects TVL cap.
      */
     function fuzz_MaxDepositRespectsTvlCap(uint256 cap, uint256 existing) public {
-        cap      = bound(cap,      MIN_DEP,     10_000_000 * 1e6);
-        existing = bound(existing, 0,           cap);
+        cap = bound(cap, MIN_DEP, 10_000_000 * 1e6);
+        existing = bound(existing, 0, cap);
 
         vm.prank(admin);
         vault.setTvlCap(cap);
@@ -1427,7 +1362,7 @@ contract FuzzTest_SynthoraVault is SynthoraBase {
         }
 
         uint256 maxDep = vault.maxDeposit(alice);
-        uint256 tvl    = vault.totalAssets();
+        uint256 tvl = vault.totalAssets();
 
         if (tvl >= cap) {
             assertEq(maxDep, 0, "cap reached: maxDeposit = 0");
@@ -1442,7 +1377,7 @@ contract FuzzTest_SynthoraVault is SynthoraBase {
      */
     function fuzz_RiskConfigValidation(uint32 minLev, uint32 maxLev) public {
         // Clamp to interesting ranges around the valid bounds
-        minLev = uint32(bound(minLev, 0, 300));  // valid range is [100, ...]
+        minLev = uint32(bound(minLev, 0, 300)); // valid range is [100, ...]
         maxLev = uint32(bound(maxLev, 0, 3000)); // valid range is [..., 200000]
 
         bool invalid = (minLev < 100 || maxLev > 200_000 || maxLev <= minLev);
@@ -1453,8 +1388,7 @@ contract FuzzTest_SynthoraVault is SynthoraBase {
             vault.setRiskConfig(minLev, maxLev, 2000, 8500, 500, 20, 1500, 10);
         } else {
             // Only call when we expect success
-            vault.setRiskConfig(minLev, maxLev, 2000, 8500, 500, 20,
-                minLev < maxLev ? minLev + 1 : minLev, 10);
+            vault.setRiskConfig(minLev, maxLev, 2000, 8500, 500, 20, minLev < maxLev ? minLev + 1 : minLev, 10);
             SynthoraVault.RiskConfig memory rc = vault.getRiskConfig();
             assertEq(rc.minLeverageBps, minLev);
         }
@@ -1478,8 +1412,8 @@ contract FuzzTest_SynthoraVault is SynthoraBase {
  */
 contract InvariantHandler is SynthoraBase {
     // ── Ghost variables — track state independently of the vault ──────────────
-    uint256 public ghost_totalDeposited;   // gross USDC deposited
-    uint256 public ghost_totalWithdrawn;   // gross USDC withdrawn (pre-fee)
+    uint256 public ghost_totalDeposited; // gross USDC deposited
+    uint256 public ghost_totalWithdrawn; // gross USDC withdrawn (pre-fee)
     uint256 public ghost_positionsOpened;
     uint256 public ghost_positionsClosed;
 
@@ -1508,7 +1442,7 @@ contract InvariantHandler is SynthoraBase {
     }
 
     function handler_withdraw(uint256 actorIndex, uint256 sharesFraction) external {
-        address actor  = actors[actorIndex % actors.length];
+        address actor = actors[actorIndex % actors.length];
         uint256 shares = vault.balanceOf(actor);
         if (shares == 0) return;
 
@@ -1538,8 +1472,7 @@ contract InvariantHandler is SynthoraBase {
         (uint128 p,,) = vault.getAssetPrice(AAPL_FEED);
         vm.prank(strategist);
         try vault.executeStrategy(
-            AAPL_FEED, collateral, leverage, isLong, 0,
-            uint128(uint256(p) * 98 / 100), uint128(uint256(p) * 102 / 100)
+            AAPL_FEED, collateral, leverage, isLong, 0, uint128(uint256(p) * 98 / 100), uint128(uint256(p) * 102 / 100)
         ) {
             ghost_positionsOpened++;
         } catch {}
@@ -1553,11 +1486,7 @@ contract InvariantHandler is SynthoraBase {
         (uint128 p,,) = vault.getAssetPrice(pos.assetId);
 
         vm.prank(keeper); // keeper can close any position
-        try vault.closePosition(
-            positionId,
-            uint128(uint256(p) * 95 / 100),
-            uint128(uint256(p) * 105 / 100)
-        ) {
+        try vault.closePosition(positionId, uint128(uint256(p) * 95 / 100), uint128(uint256(p) * 105 / 100)) {
             ghost_positionsClosed++;
         } catch {}
     }
@@ -1612,7 +1541,7 @@ contract InvariantTest_SynthoraVault is StdInvariant, SynthoraBase {
      *         Violation would mean the vault is promising more than it holds.
      */
     function invariant_totalAssetsGteCollateralLocked() public view {
-        uint256 assets    = handler.vault().totalAssets();
+        uint256 assets = handler.vault().totalAssets();
         uint256 collateral = handler.vault().totalCollateralLocked();
         assertGe(assets, collateral, "INV-1: totalAssets >= totalCollateralLocked");
     }
@@ -1691,10 +1620,10 @@ contract InvariantTest_SynthoraVault is StdInvariant, SynthoraBase {
      *         (Available liq is always the free float, so total must add up.)
      */
     function invariant_liquidityAccountingConsistent() public view {
-        SynthoraVault v       = handler.vault();
-        uint256 avail         = v.availableLiquidity();
-        uint256 locked        = v.totalCollateralLocked();
-        uint256 usdcBalance   = IERC20(address(handler.usdc())).balanceOf(address(v));
+        SynthoraVault v = handler.vault();
+        uint256 avail = v.availableLiquidity();
+        uint256 locked = v.totalCollateralLocked();
+        uint256 usdcBalance = IERC20(address(handler.usdc())).balanceOf(address(v));
 
         assertLe(avail + locked, usdcBalance + 1, "INV-7: avail + locked <= balance (+1 for rounding)");
     }
@@ -1705,7 +1634,6 @@ contract InvariantTest_SynthoraVault is StdInvariant, SynthoraBase {
 // ═════════════════════════════════════════════════════════════════════════════
 
 contract UpgradeSafetyTest is SynthoraBase {
-
     /**
      * @dev Deploys a new implementation and upgrades the proxy.
      *      Asserts all state is preserved after the upgrade.
@@ -1718,12 +1646,12 @@ contract UpgradeSafetyTest is SynthoraBase {
         uint256 depositShares = _approveAndDeposit(alice, DEPOSIT_10K);
         _openPosition(strategist, AAPL_FEED, 2_000e6, 500, true);
 
-        uint256 totalAssetsBefore    = vault.totalAssets();
-        uint256 totalSupplyBefore    = vault.totalSupply();
-        uint256 hwmBefore            = vault.highWaterMark();
-        uint256 posCountBefore       = vault.activePositionCount();
-        uint256 notionalBefore       = vault.totalNotionalValue();
-        uint256 aliceSharesBefore    = vault.balanceOf(alice);
+        uint256 totalAssetsBefore = vault.totalAssets();
+        uint256 totalSupplyBefore = vault.totalSupply();
+        uint256 hwmBefore = vault.highWaterMark();
+        uint256 posCountBefore = vault.activePositionCount();
+        uint256 notionalBefore = vault.totalNotionalValue();
+        uint256 aliceSharesBefore = vault.balanceOf(alice);
 
         // Deploy new implementation (same bytecode for this test)
         SynthoraVault newImpl = new SynthoraVault();
@@ -1732,14 +1660,14 @@ contract UpgradeSafetyTest is SynthoraBase {
         vault.upgradeToAndCall(address(newImpl), "");
 
         // All state must be identical after upgrade
-        assertEq(vault.totalAssets(),           totalAssetsBefore,  "totalAssets preserved");
-        assertEq(vault.totalSupply(),            totalSupplyBefore,  "totalSupply preserved");
-        assertEq(vault.highWaterMark(),          hwmBefore,         "hwm preserved");
-        assertEq(vault.activePositionCount(),    posCountBefore,     "pos count preserved");
-        assertEq(vault.totalNotionalValue(),     notionalBefore,     "notional preserved");
-        assertEq(vault.balanceOf(alice),         aliceSharesBefore,  "alice shares preserved");
-        assertEq(vault.treasury(),               treasury,           "treasury preserved");
-        assertEq(vault.minDepositAmount(),       100e6,             "min deposit preserved");
+        assertEq(vault.totalAssets(), totalAssetsBefore, "totalAssets preserved");
+        assertEq(vault.totalSupply(), totalSupplyBefore, "totalSupply preserved");
+        assertEq(vault.highWaterMark(), hwmBefore, "hwm preserved");
+        assertEq(vault.activePositionCount(), posCountBefore, "pos count preserved");
+        assertEq(vault.totalNotionalValue(), notionalBefore, "notional preserved");
+        assertEq(vault.balanceOf(alice), aliceSharesBefore, "alice shares preserved");
+        assertEq(vault.treasury(), treasury, "treasury preserved");
+        assertEq(vault.minDepositAmount(), 100e6, "min deposit preserved");
 
         depositShares; // suppress
     }
@@ -1773,9 +1701,9 @@ contract UpgradeSafetyTest is SynthoraBase {
 
         assertTrue(vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), admin));
         assertTrue(vault.hasRole(STRATEGIST_ROLE, strategist));
-        assertTrue(vault.hasRole(KEEPER_ROLE,     keeper));
-        assertTrue(vault.hasRole(PAUSER_ROLE,     pauser));
-        assertTrue(vault.hasRole(UPGRADER_ROLE,   upgrader));
+        assertTrue(vault.hasRole(KEEPER_ROLE, keeper));
+        assertTrue(vault.hasRole(PAUSER_ROLE, pauser));
+        assertTrue(vault.hasRole(UPGRADER_ROLE, upgrader));
     }
 
     /**
@@ -1797,7 +1725,6 @@ contract UpgradeSafetyTest is SynthoraBase {
 // ═════════════════════════════════════════════════════════════════════════════
 
 contract SecurityTest_SynthoraVault is SynthoraBase {
-
     /**
      * @dev Reentrancy: A malicious ERC-20 cannot re-enter the vault on transfer.
      *      (ReentrancyGuard prevents this.)
@@ -1826,13 +1753,7 @@ contract SecurityTest_SynthoraVault is SynthoraBase {
 
         // Same block — should revert
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SynthoraVault.FlashLoanProtection.selector,
-                alice,
-                block.number + 1
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.FlashLoanProtection.selector, alice, block.number + 1));
         vault.withdraw(DEPOSIT_1K, alice, alice);
 
         // Next block — should succeed
@@ -1855,8 +1776,9 @@ contract SecurityTest_SynthoraVault is SynthoraBase {
         (uint128 p,,) = vault.getAssetPrice(AAPL_FEED); // unsafe read
         vm.prank(strategist);
         vm.expectRevert(); // stale price
-        vault.executeStrategy(AAPL_FEED, 1000e6, 500, true, 0,
-            uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100));
+        vault.executeStrategy(
+            AAPL_FEED, 1000e6, 500, true, 0, uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100)
+        );
     }
 
     /**
@@ -1877,9 +1799,7 @@ contract SecurityTest_SynthoraVault is SynthoraBase {
      */
     function test_security_feeCap() public {
         vm.prank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(SynthoraVault.InvalidFee.selector, 3001, 3000)
-        );
+        vm.expectRevert(abi.encodeWithSelector(SynthoraVault.InvalidFee.selector, 3001, 3000));
         vault.setFeeConfig(3001, 0, 0, 0);
     }
 
@@ -1907,11 +1827,7 @@ contract SecurityTest_SynthoraVault is SynthoraBase {
 
         vm.prank(pauser);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                SynthoraVault.CallerMissingRole.selector,
-                vault.DEFAULT_ADMIN_ROLE(),
-                pauser
-            )
+            abi.encodeWithSelector(SynthoraVault.CallerMissingRole.selector, vault.DEFAULT_ADMIN_ROLE(), pauser)
         );
         vault.unpause();
     }
@@ -1929,14 +1845,16 @@ contract SecurityTest_SynthoraVault is SynthoraBase {
         vm.startPrank(strategist);
         for (uint256 i; i < 3; i++) {
             (uint128 p,,) = vault.getAssetPrice(AAPL_FEED);
-            vault.executeStrategy(AAPL_FEED, 500e6, 100, true, 0,
-                uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100));
+            vault.executeStrategy(
+                AAPL_FEED, 500e6, 100, true, 0, uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100)
+            );
         }
 
         vm.expectRevert(); // MaxPositionsReached
         (uint128 p,,) = vault.getAssetPrice(AAPL_FEED);
-        vault.executeStrategy(AAPL_FEED, 500e6, 100, true, 0,
-            uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100));
+        vault.executeStrategy(
+            AAPL_FEED, 500e6, 100, true, 0, uint128(uint256(p) * 99 / 100), uint128(uint256(p) * 101 / 100)
+        );
         vm.stopPrank();
     }
 }

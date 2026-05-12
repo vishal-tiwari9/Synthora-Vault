@@ -51,7 +51,7 @@ interface ISynthoraRouter {
     /// @param collateralOut  Net USDC transferred back to the vault
     struct CloseResult {
         uint128 exitPrice;
-        int256  realizedPnl;
+        int256 realizedPnl;
         uint128 fee;
         uint128 collateralOut;
     }
@@ -73,13 +73,9 @@ interface ISynthoraRouter {
     /// @param isLong        True = long, False = short
     /// @param referencePrice Entry reference price (used for slippage guard, 18-dec)
     /// @return result       Struct containing execution details
-    function openPosition(
-        bytes32 assetId,
-        uint128 sizeUsd,
-        uint128 collateralUsd,
-        bool    isLong,
-        uint128 referencePrice
-    ) external returns (OpenResult memory result);
+    function openPosition(bytes32 assetId, uint128 sizeUsd, uint128 collateralUsd, bool isLong, uint128 referencePrice)
+        external
+        returns (OpenResult memory result);
 
     /// @notice Closes an open position and returns collateral ± PnL to the vault.
     /// @dev    PLACEHOLDER — implement against the target perp DEX.
@@ -87,10 +83,7 @@ interface ISynthoraRouter {
     /// @param vaultPositionId   The position ID assigned by the vault (for correlation)
     /// @param referencePrice    Expected exit price (used for slippage guard, 18-dec)
     /// @return result           Struct containing close details and net USDC out
-    function closePosition(
-        uint256 vaultPositionId,
-        uint128 referencePrice
-    ) external returns (CloseResult memory result);
+    function closePosition(uint256 vaultPositionId, uint128 referencePrice) external returns (CloseResult memory result);
 
     /// @notice Liquidates an undercollateralised position.
     /// @dev    Called by the vault after it has verified the position is
@@ -104,11 +97,9 @@ interface ISynthoraRouter {
     /// @param liquidationPrice  Price at which the liquidation is triggered (18-dec)
     /// @param keeper            Address to receive the liquidation incentive
     /// @return result           Struct containing close details
-    function liquidatePosition(
-        uint256 vaultPositionId,
-        uint128 liquidationPrice,
-        address keeper
-    ) external returns (CloseResult memory result);
+    function liquidatePosition(uint256 vaultPositionId, uint128 liquidationPrice, address keeper)
+        external
+        returns (CloseResult memory result);
 
     // -------------------------------------------------------------------------
     // Position Adjustment
@@ -121,12 +112,8 @@ interface ISynthoraRouter {
     /// @param newSizeUsd      New target notional size (USDC, 6-dec)
     /// @param newLeverageBps  New leverage in basis points (100 = 1×)
     /// @param referencePrice  Current oracle price for slippage guard (18-dec)
-    function adjustLeverage(
-        uint256 vaultPositionId,
-        uint128 newSizeUsd,
-        uint32  newLeverageBps,
-        uint128 referencePrice
-    ) external;
+    function adjustLeverage(uint256 vaultPositionId, uint128 newSizeUsd, uint32 newLeverageBps, uint128 referencePrice)
+        external;
 
     /// @notice Tops up collateral for a position to avoid liquidation.
     /// @dev    PLACEHOLDER — implement against the target perp DEX.
@@ -134,10 +121,7 @@ interface ISynthoraRouter {
     ///
     /// @param vaultPositionId     Vault-side position ID
     /// @param additionalCollateral Extra margin in USDC (6-dec)
-    function addCollateral(
-        uint256 vaultPositionId,
-        uint128 additionalCollateral
-    ) external;
+    function addCollateral(uint256 vaultPositionId, uint128 additionalCollateral) external;
 
     // -------------------------------------------------------------------------
     // Funding Rate Arbitrage
@@ -150,10 +134,7 @@ interface ISynthoraRouter {
     ///
     /// @param vaultPositionId Vault-side position ID
     /// @param fundingRate     Current signed funding rate (bps, negative = shorts pay longs)
-    function adjustFundingArb(
-        uint256 vaultPositionId,
-        int256  fundingRate
-    ) external;
+    function adjustFundingArb(uint256 vaultPositionId, int256 fundingRate) external;
 
     // -------------------------------------------------------------------------
     // Queries
@@ -183,21 +164,15 @@ interface ISynthoraRouter {
         uint128 executedPrice,
         uint128 sizeUsd,
         uint128 collateralUsd,
-        bool    isLong
+        bool isLong
     );
 
     event RouterPositionClosed(
-        uint256 indexed vaultPositionId,
-        uint128 exitPrice,
-        int256  realizedPnl,
-        uint128 collateralOut
+        uint256 indexed vaultPositionId, uint128 exitPrice, int256 realizedPnl, uint128 collateralOut
     );
 
     event RouterPositionLiquidated(
-        uint256 indexed vaultPositionId,
-        uint128 liquidationPrice,
-        address indexed keeper,
-        uint128 collateralOut
+        uint256 indexed vaultPositionId, uint128 liquidationPrice, address indexed keeper, uint128 collateralOut
     );
 
     // -------------------------------------------------------------------------

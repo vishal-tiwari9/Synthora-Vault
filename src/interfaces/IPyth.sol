@@ -19,10 +19,10 @@ interface IPyth {
     /// @param expo        Exponent: realPrice = price × 10^expo
     /// @param publishTime Unix timestamp (seconds) when the price was computed
     struct Price {
-        int64  price;
+        int64 price;
         uint64 conf;
-        int32  expo;
-        uint   publishTime;
+        int32 expo;
+        uint256 publishTime;
     }
 
     /// @notice Full price feed snapshot (current price + exponential moving average)
@@ -31,8 +31,8 @@ interface IPyth {
     /// @param emaPrice Exponential moving-average price (slower, more manipulation resistant)
     struct PriceFeed {
         bytes32 id;
-        Price   price;
-        Price   emaPrice;
+        Price price;
+        Price emaPrice;
     }
 
     // -------------------------------------------------------------------------
@@ -52,7 +52,7 @@ interface IPyth {
     /// @param id  Pyth price feed ID
     /// @param age Maximum acceptable age in seconds
     /// @return    Fresh Price struct
-    function getPriceNoOlderThan(bytes32 id, uint age) external view returns (Price memory);
+    function getPriceNoOlderThan(bytes32 id, uint256 age) external view returns (Price memory);
 
     /// @notice Returns the EMA (exponential moving average) price for `id`.
     /// @dev    More manipulation-resistant than the spot price; suitable for
@@ -65,7 +65,7 @@ interface IPyth {
     /// @param id  Pyth price feed ID
     /// @param age Maximum acceptable age in seconds
     /// @return    Fresh EMA Price struct
-    function getEmaPriceNoOlderThan(bytes32 id, uint age) external view returns (Price memory);
+    function getEmaPriceNoOlderThan(bytes32 id, uint256 age) external view returns (Price memory);
 
     // -------------------------------------------------------------------------
     // Feed Update (Push Model)
@@ -74,7 +74,7 @@ interface IPyth {
     /// @notice Returns the fee in wei required to update `updateData`.
     /// @param updateData Encoded price update bytes (obtained from Pyth Hermes API)
     /// @return feeAmount Wei required
-    function getUpdateFee(bytes[] calldata updateData) external view returns (uint feeAmount);
+    function getUpdateFee(bytes[] calldata updateData) external view returns (uint256 feeAmount);
 
     /// @notice Pushes fresh price data on-chain.
     /// @dev    Must be called with `msg.value >= getUpdateFee(updateData)`.
@@ -89,9 +89,9 @@ interface IPyth {
     /// @param priceIds      Feed IDs to selectively update
     /// @param minPublishTime Only update feeds with publishTime < minPublishTime
     function updatePriceFeedsIfNecessary(
-        bytes[]   calldata updateData,
+        bytes[] calldata updateData,
         bytes32[] calldata priceIds,
-        uint64[]  calldata minPublishTime
+        uint64[] calldata minPublishTime
     ) external payable;
 
     // -------------------------------------------------------------------------
@@ -112,19 +112,14 @@ interface IPyth {
     /// @dev    Convenience wrapper around the `expo` field (returns -expo).
     /// @param id Pyth price feed ID
     /// @return   Decimals (e.g., 8 for most Pyth feeds)
-    function getValidTimePeriod() external view returns (uint);
+    function getValidTimePeriod() external view returns (uint256);
 
     // -------------------------------------------------------------------------
     // Events (for off-chain indexing)
     // -------------------------------------------------------------------------
 
     /// @notice Emitted when a price feed is updated via `updatePriceFeeds`.
-    event PriceFeedUpdate(
-        bytes32 indexed id,
-        uint64  publishTime,
-        int64   price,
-        uint64  conf
-    );
+    event PriceFeedUpdate(bytes32 indexed id, uint64 publishTime, int64 price, uint64 conf);
 
     // -------------------------------------------------------------------------
     // Errors (Pyth SDK standard)

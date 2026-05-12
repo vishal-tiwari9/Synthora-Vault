@@ -75,8 +75,8 @@ pragma solidity ^0.8.28;
  */
 
 import {Script, console2} from "forge-std/Script.sol";
-import {ERC1967Proxy}     from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {SynthoraVault}    from "../src/SynthoraVault.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {SynthoraVault} from "../src/SynthoraVault.sol";
 
 contract DeploySynthoraVault is Script {
     // ─── Deployment artefacts (written to console) ────────────────────────────
@@ -85,25 +85,25 @@ contract DeploySynthoraVault is Script {
 
     // ─── Well-known Pyth feed IDs (mainnet / Arbitrum) ───────────────────────
     // Source: https://pyth.network/developers/price-feed-ids
-    bytes32 constant PYTH_AAPL  = 0x49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688;
-    bytes32 constant PYTH_TSLA  = 0x16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1;
-    bytes32 constant PYTH_NVDA  = 0x9b5729b99e46b3a18193f83a50f68c74d67fc0085f5e3edd1bdc88ef5cdb53f8;
-    bytes32 constant PYTH_SPX   = 0x694aa1769357215de4fac081bf1f309adc325306ef9b4e9f76bc3857f7acd7a3; // ETH/USD used as placeholder
-    bytes32 constant PYTH_GOLD  = 0x765d2ba906dbc32ca17cc11f5310a89e9ee1f6420508c63861f2f8ba4ee34bb2;
+    bytes32 constant PYTH_AAPL = 0x49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688;
+    bytes32 constant PYTH_TSLA = 0x16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1;
+    bytes32 constant PYTH_NVDA = 0x9b5729b99e46b3a18193f83a50f68c74d67fc0085f5e3edd1bdc88ef5cdb53f8;
+    bytes32 constant PYTH_SPX = 0x694aa1769357215de4fac081bf1f309adc325306ef9b4e9f76bc3857f7acd7a3; // ETH/USD used as placeholder
+    bytes32 constant PYTH_GOLD = 0x765d2ba906dbc32ca17cc11f5310a89e9ee1f6420508c63861f2f8ba4ee34bb2;
 
     function run() external {
         // ── Load environment ─────────────────────────────────────────────────
-        uint256 deployerKey   = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        address admin         = vm.envOr("ADMIN_ADDRESS",      vm.addr(deployerKey));
-        address strategist    = vm.envOr("STRATEGIST_ADDRESS", vm.addr(deployerKey));
-        address keeper        = vm.envOr("KEEPER_ADDRESS",     vm.addr(deployerKey));
-        address pauser        = vm.envOr("PAUSER_ADDRESS",     vm.addr(deployerKey));
-        address upgrader      = vm.envOr("UPGRADER_ADDRESS",   vm.addr(deployerKey));
-        address treasury      = vm.envOr("TREASURY_ADDRESS",   vm.addr(deployerKey));
+        uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        address admin = vm.envOr("ADMIN_ADDRESS", vm.addr(deployerKey));
+        address strategist = vm.envOr("STRATEGIST_ADDRESS", vm.addr(deployerKey));
+        address keeper = vm.envOr("KEEPER_ADDRESS", vm.addr(deployerKey));
+        address pauser = vm.envOr("PAUSER_ADDRESS", vm.addr(deployerKey));
+        address upgrader = vm.envOr("UPGRADER_ADDRESS", vm.addr(deployerKey));
+        address treasury = vm.envOr("TREASURY_ADDRESS", vm.addr(deployerKey));
 
         // Mainnet / Arbitrum addresses — override via env for other chains
-        address usdc  = vm.envOr("USDC_ADDRESS", address(0xaf88d065e77c8cC2239327C5EDb3A432268e5831)); // Arb USDC
-        address pyth  = vm.envOr("PYTH_ADDRESS", address(0xff1a0f4744e8582DF1aE09D5611b887B6a12925C)); // Arb Pyth
+        address usdc = vm.envOr("USDC_ADDRESS", address(0xaf88d065e77c8cC2239327C5EDb3A432268e5831)); // Arb USDC
+        address pyth = vm.envOr("PYTH_ADDRESS", address(0xff1a0f4744e8582DF1aE09D5611b887B6a12925C)); // Arb Pyth
 
         console2.log("=== Synthora Vault Deployment ===");
         console2.log("Deployer  :", vm.addr(deployerKey));
@@ -129,7 +129,7 @@ contract DeploySynthoraVault is Script {
                 usdc,
                 pyth,
                 treasury,
-                admin,           // initial admin — receives all roles
+                admin, // initial admin — receives all roles
                 "Synthora USDC Vault",
                 "svUSDC"
             )
@@ -150,16 +150,16 @@ contract DeploySynthoraVault is Script {
         // Here we delegate them to purpose-specific addresses.
 
         bytes32 STRATEGIST = vault.STRATEGIST_ROLE();
-        bytes32 KEEPER     = vault.KEEPER_ROLE();
-        bytes32 PAUSER     = vault.PAUSER_ROLE();
-        bytes32 UPGRADER   = vault.UPGRADER_ROLE();
-        bytes32 ADMIN      = vault.DEFAULT_ADMIN_ROLE();
+        bytes32 KEEPER = vault.KEEPER_ROLE();
+        bytes32 PAUSER = vault.PAUSER_ROLE();
+        bytes32 UPGRADER = vault.UPGRADER_ROLE();
+        bytes32 ADMIN = vault.DEFAULT_ADMIN_ROLE();
 
         // Grant to dedicated addresses
         if (strategist != admin) vault.grantRole(STRATEGIST, strategist);
-        if (keeper     != admin) vault.grantRole(KEEPER,     keeper);
-        if (pauser     != admin) vault.grantRole(PAUSER,     pauser);
-        if (upgrader   != admin) vault.grantRole(UPGRADER,   upgrader);
+        if (keeper != admin) vault.grantRole(KEEPER, keeper);
+        if (pauser != admin) vault.grantRole(PAUSER, pauser);
+        if (upgrader != admin) vault.grantRole(UPGRADER, upgrader);
 
         // SECURITY: if deployer != admin, revoke deployer's admin role LAST
         // (after all other grants complete) to avoid locking yourself out.
@@ -177,32 +177,32 @@ contract DeploySynthoraVault is Script {
         _configureAsset(vault, "AAPL", PYTH_AAPL, 60, 200);
         _configureAsset(vault, "TSLA", PYTH_TSLA, 60, 200);
         _configureAsset(vault, "NVDA", PYTH_NVDA, 60, 200);
-        _configureAsset(vault, "SPX",  PYTH_SPX,  60, 200);
+        _configureAsset(vault, "SPX", PYTH_SPX, 60, 200);
         _configureAsset(vault, "GOLD", PYTH_GOLD, 120, 300); // 24/7, slightly wider
 
         // ── Step 6: Risk config (production values) ───────────────────────────
         vault.setRiskConfig(
-            100,    // minLeverageBps   (1×)
-            2000,   // maxLeverageBps  (20×)
-            2000,   // maxPositionSizeBps — 20% of TVL per position
-            8500,   // liquidationThresholdBps — liq at 85% collateral loss
-            500,    // maintenanceMarginBps — 5%
-            20,     // maxOpenPositions
-            1500,   // maxLeverageForDynamic (15×)
-            10      // fundingRateThresholdBps (0.10%)
+            100, // minLeverageBps   (1×)
+            2000, // maxLeverageBps  (20×)
+            2000, // maxPositionSizeBps — 20% of TVL per position
+            8500, // liquidationThresholdBps — liq at 85% collateral loss
+            500, // maintenanceMarginBps — 5%
+            20, // maxOpenPositions
+            1500, // maxLeverageForDynamic (15×)
+            10 // fundingRateThresholdBps (0.10%)
         );
 
         // ── Step 7: Fee config ────────────────────────────────────────────────
         vault.setFeeConfig(
-            1000,  // performanceFeeBps (10%)
-            200,   // managementFeeBps  (2% p.a.)
-            50,    // withdrawalFeeBps  (0.5%)
-            0      // depositFeeBps     (0%)
+            1000, // performanceFeeBps (10%)
+            200, // managementFeeBps  (2% p.a.)
+            50, // withdrawalFeeBps  (0.5%)
+            0 // depositFeeBps     (0%)
         );
 
         // ── Step 8: TVL cap & min deposit ────────────────────────────────────
-        vault.setTvlCap(10_000_000 * 1e6);  // $10M initial cap
-        vault.setMinDeposit(100 * 1e6);      // $100 minimum
+        vault.setTvlCap(10_000_000 * 1e6); // $10M initial cap
+        vault.setMinDeposit(100 * 1e6); // $100 minimum
 
         vm.stopBroadcast();
 
@@ -218,7 +218,7 @@ contract DeploySynthoraVault is Script {
         console2.log("Share Price (1e18)  :", vault.sharePrice());
         console2.log("\nSave these addresses in your .env / deployment registry!");
         console2.log("SYNTHORA_PROXY=", proxyAddress);
-        console2.log("SYNTHORA_IMPL=",  implAddress);
+        console2.log("SYNTHORA_IMPL=", implAddress);
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -230,17 +230,17 @@ contract DeploySynthoraVault is Script {
     function _configureAsset(
         SynthoraVault vault,
         string memory label,
-        bytes32       pythFeedId,
-        uint32        maxAge,
-        uint32        maxDeviation
+        bytes32 pythFeedId,
+        uint32 maxAge,
+        uint32 maxDeviation
     ) internal {
         vault.setOracleConfig(
-            pythFeedId,   // assetId == pythFeedId for simplicity; use a custom key in production
-            pythFeedId,   // pythFeedId
-            address(0),   // no Chainlink feed wired yet
+            pythFeedId, // assetId == pythFeedId for simplicity; use a custom key in production
+            pythFeedId, // pythFeedId
+            address(0), // no Chainlink feed wired yet
             maxAge,
             maxDeviation,
-            false         // useChainlinkFallback = false until Chainlink feeds are set
+            false // useChainlinkFallback = false until Chainlink feeds are set
         );
         vault.setAssetWhitelist(pythFeedId, true);
         console2.log("Asset configured:", label);
@@ -250,37 +250,34 @@ contract DeploySynthoraVault is Script {
      * @dev Runs read-only assertions post-deployment to catch misconfigurations.
      *      This is the "trust but verify" step — runs WITHOUT broadcast so it's free.
      */
-    function _postDeployChecks(
-        SynthoraVault vault,
-        address admin,
-        address usdc,
-        address pyth,
-        address treasury
-    ) internal view {
+    function _postDeployChecks(SynthoraVault vault, address admin, address usdc, address pyth, address treasury)
+        internal
+        view
+    {
         // Proxy points at the right asset
-        require(vault.asset() == usdc,         "ASSET_MISMATCH");
-        require(address(vault.pythOracle()) == pyth,  "PYTH_MISMATCH");
-        require(vault.treasury() == treasury,  "TREASURY_MISMATCH");
+        require(vault.asset() == usdc, "ASSET_MISMATCH");
+        require(address(vault.pythOracle()) == pyth, "PYTH_MISMATCH");
+        require(vault.treasury() == treasury, "TREASURY_MISMATCH");
 
         // Admin has all roles
         require(vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), admin), "ADMIN_ROLE_MISSING");
 
         // Risk config sanity
         SynthoraVault.RiskConfig memory rc = vault.getRiskConfig();
-        require(rc.minLeverageBps  == 100,  "MIN_LEV");
-        require(rc.maxLeverageBps  == 2000, "MAX_LEV");
-        require(rc.maxOpenPositions == 20,  "MAX_POS");
+        require(rc.minLeverageBps == 100, "MIN_LEV");
+        require(rc.maxLeverageBps == 2000, "MAX_LEV");
+        require(rc.maxOpenPositions == 20, "MAX_POS");
 
         // Fee config sanity
         SynthoraVault.FeeConfig memory fc = vault.getFeeConfig();
         require(fc.performanceFeeBps == 1000, "PERF_FEE");
-        require(fc.managementFeeBps  == 200,  "MGMT_FEE");
+        require(fc.managementFeeBps == 200, "MGMT_FEE");
 
         // ERC-4626 basics
-        require(vault.totalAssets()  == 0,          "TOTAL_ASSETS");
-        require(vault.sharePrice()   == 1e18,        "SHARE_PRICE");
-        require(vault.highWaterMark() == 1e18,       "HWM");
-        require(vault.minDepositAmount() == 100e6,   "MIN_DEP");
+        require(vault.totalAssets() == 0, "TOTAL_ASSETS");
+        require(vault.sharePrice() == 1e18, "SHARE_PRICE");
+        require(vault.highWaterMark() == 1e18, "HWM");
+        require(vault.minDepositAmount() == 100e6, "MIN_DEP");
         require(vault.tvlCap() == 10_000_000 * 1e6, "TVL_CAP");
 
         // Assets whitelisted

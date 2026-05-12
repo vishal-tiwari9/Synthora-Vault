@@ -46,26 +46,14 @@ interface IChainlinkAggregator {
     function latestRoundData()
         external
         view
-        returns (
-            uint80  roundId,
-            int256  answer,
-            uint256 startedAt,
-            uint256 updatedAt,
-            uint80  answeredInRound
-        );
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
 
     /// @notice Returns historic round data for a specific round ID.
     /// @dev    Useful for TWAP calculations or auditing past prices.
     function getRoundData(uint80 _roundId)
         external
         view
-        returns (
-            uint80  roundId,
-            int256  answer,
-            uint256 startedAt,
-            uint256 updatedAt,
-            uint80  answeredInRound
-        );
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
 
     // ── Metadata ──────────────────────────────────────────────────────────────
 

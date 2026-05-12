@@ -1,26 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {UUPSUpgradeable}          from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {Ownable2StepUpgradeable}  from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import {PausableUpgradeable}      from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {ERC4626Upgradeable}       from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
-import {ERC20Upgradeable}         from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 
-
-import {IERC20}    from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Math}      from "@openzeppelin/contracts/utils/math/Math.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-
-import {IPyth}           from "./interfaces/IPyth.sol";
+import {IPyth} from "./interfaces/IPyth.sol";
 import {ISynthoraRouter} from "./interfaces/ISynthoraRouter.sol";
 
 /**
  * @title  SynthoraVault
- * @author Vishal Tiwari  
+ * @author Vishal Tiwari
  * @notice Production-grade ERC-4626 vault that automates leveraged long/short
  *         positions on Real-World Asset (RWA) synthetic perpetual futures.
  *
@@ -72,7 +70,7 @@ contract SynthoraVault is
     ERC4626Upgradeable
 {
     using SafeERC20 for IERC20;
-    using Math      for uint256;
+    using Math for uint256;
 
     // =========================================================================
     // §1  CONSTANTS
@@ -81,35 +79,35 @@ contract SynthoraVault is
     /// @notice Role that may configure fees, risk params, and emergency settings.
     bytes32 public constant STRATEGIST_ROLE = keccak256("STRATEGIST_ROLE");
     /// @notice Role that triggers rebalancing, liquidation, and funding-arb ops.
-    bytes32 public constant KEEPER_ROLE     = keccak256("KEEPER_ROLE");
+    bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
     /// @notice Role that may pause the vault.
-    bytes32 public constant PAUSER_ROLE     = keccak256("PAUSER_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     /// @notice Role that may authorise UUPS upgrades.
-    bytes32 public constant UPGRADER_ROLE   = keccak256("UPGRADER_ROLE");
-    
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+
     /// @dev Denominator for all basis-point calculations.
-    uint256 public constant BASIS_POINTS      = 10_000;
+    uint256 public constant BASIS_POINTS = 10_000;
     /// @dev Divisor that converts leverageBps to a multiplier (500 bps → 5×).
     uint256 public constant LEVERAGE_PRECISION = 100;
     /// @dev 18-decimal precision used for share-price and price normalisation.
-    uint256 public constant PRICE_PRECISION   = 1e18;
+    uint256 public constant PRICE_PRECISION = 1e18;
     /// @dev USDC decimals (6).
-    uint256 public constant USDC_DECIMALS     = 1e6;
+    uint256 public constant USDC_DECIMALS = 1e6;
 
     /// @dev Maximum fee expressible in basis points (30 %).
-    uint256 public constant MAX_FEE_BPS          = 3_000;
+    uint256 public constant MAX_FEE_BPS = 3_000;
     /// @dev Maximum annual management fee (10 %).
-    uint256 public constant MAX_MGMT_FEE_BPS     = 1_000;
+    uint256 public constant MAX_MGMT_FEE_BPS = 1_000;
     /// @dev Maximum withdrawal / deposit fee (5 %).
     uint256 public constant MAX_ENTRY_EXIT_FEE_BPS = 500;
     /// @dev Maximum leverage (20×) expressed in leverageBps units.
-    uint32  public constant MAX_LEVERAGE_BPS     = 2_000;
+    uint32 public constant MAX_LEVERAGE_BPS = 2_000;
     /// @dev Minimum leverage (1×) expressed in leverageBps units.
-    uint32  public constant MIN_LEVERAGE_BPS     = 100;
+    uint32 public constant MIN_LEVERAGE_BPS = 100;
     /// @dev Pyth price freshness cap used at the module level.
-    uint256 public constant PYTH_MAX_AGE         = 60;   // seconds
+    uint256 public constant PYTH_MAX_AGE = 60; // seconds
     /// @dev Chainlink price freshness cap.
-    uint256 public constant CHAINLINK_MAX_AGE    = 3_600; // seconds
+    uint256 public constant CHAINLINK_MAX_AGE = 3_600; // seconds
 
     /// @dev Implementation version — increment on each upgrade.
     uint256 public constant VERSION = 1;
@@ -127,13 +125,13 @@ contract SynthoraVault is
      *         Slot B: accruedFees(256)
      */
     struct FeeConfig {
-        uint32 performanceFeeBps;  ///< % of profit taken as performance fee
-        uint32 managementFeeBps;   ///< annual AUM fee (pro-rated per second)
-        uint32 withdrawalFeeBps;   ///< flat fee on every withdrawal
-        uint32 depositFeeBps;      ///< flat fee on every deposit
-        uint64 lastFeeCollection;  ///< unix timestamp of last management-fee sweep
-        uint64 _feePad;            ///< explicit padding, reserved for future use
-        uint256 accruedFees;       ///< USDC (6-dec) owed to treasury but not yet swept
+        uint32 performanceFeeBps; ///< % of profit taken as performance fee
+        uint32 managementFeeBps; ///< annual AUM fee (pro-rated per second)
+        uint32 withdrawalFeeBps; ///< flat fee on every withdrawal
+        uint32 depositFeeBps; ///< flat fee on every deposit
+        uint64 lastFeeCollection; ///< unix timestamp of last management-fee sweep
+        uint64 _feePad; ///< explicit padding, reserved for future use
+        uint256 accruedFees; ///< USDC (6-dec) owed to treasury but not yet swept
     }
 
     /**
@@ -141,14 +139,14 @@ contract SynthoraVault is
      * @dev    Packed into exactly 1 EVM storage slot (8 × uint32 = 256 bits).
      */
     struct RiskConfig {
-        uint32 minLeverageBps;           ///< lower bound — must be ≥ 100 (1×)
-        uint32 maxLeverageBps;           ///< upper bound — must be ≤ 2000 (20×)
-        uint32 maxPositionSizeBps;       ///< max single position as % of TVL (bps)
-        uint32 liquidationThresholdBps;  ///< collateral-loss % that triggers liq (bps)
-        uint32 maintenanceMarginBps;     ///< margin required to keep position open (bps)
-        uint32 maxOpenPositions;         ///< maximum concurrent active positions
-        uint32 maxLeverageForDynamic;    ///< leverage cap for dynamic-strategy type
-        uint32 fundingRateThresholdBps;  ///< min absolute funding rate for arb (bps)
+        uint32 minLeverageBps; ///< lower bound — must be ≥ 100 (1×)
+        uint32 maxLeverageBps; ///< upper bound — must be ≤ 2000 (20×)
+        uint32 maxPositionSizeBps; ///< max single position as % of TVL (bps)
+        uint32 liquidationThresholdBps; ///< collateral-loss % that triggers liq (bps)
+        uint32 maintenanceMarginBps; ///< margin required to keep position open (bps)
+        uint32 maxOpenPositions; ///< maximum concurrent active positions
+        uint32 maxLeverageForDynamic; ///< leverage cap for dynamic-strategy type
+        uint32 fundingRateThresholdBps; ///< min absolute funding rate for arb (bps)
     }
 
     /**
@@ -162,19 +160,19 @@ contract SynthoraVault is
      *                 + _pad(24) → fits in 64+64+32+8+8+8+8+24 = 216 bits < 256 bits ✓
      */
     struct Position {
-        bytes32 assetId;             ///< Pyth feed ID of the synthetic asset  [slot 0]
-        uint128 sizeUsd;             ///< notional position size, USDC (6-dec) [slot 1 hi]
-        uint128 collateralUsd;       ///< margin posted, USDC (6-dec)           [slot 1 lo]
-        uint128 entryPrice;          ///< fill price, 18-dec USD                [slot 2 hi]
-        uint128 liquidationPrice;    ///< price at which liq is triggered       [slot 2 lo]
-        uint64  openTimestamp;       ///< block.timestamp at open               [slot 3 …]
-        uint64  lastUpdateTimestamp; ///< block.timestamp of last mutation
-        uint32  leverageBps;         ///< leverage × 100 (e.g. 500 = 5×)
-        uint8   strategyType;        ///< 0=fixed  1=dynamic  2=fundingArb
-        bool    isLong;              ///< true = long, false = short
-        bool    isActive;            ///< false after close / liquidation
-        bool    isLiquidatable;      ///< keeper has flagged this position
-        uint24  _pad;                ///< explicit padding, reserved
+        bytes32 assetId; ///< Pyth feed ID of the synthetic asset  [slot 0]
+        uint128 sizeUsd; ///< notional position size, USDC (6-dec) [slot 1 hi]
+        uint128 collateralUsd; ///< margin posted, USDC (6-dec)           [slot 1 lo]
+        uint128 entryPrice; ///< fill price, 18-dec USD                [slot 2 hi]
+        uint128 liquidationPrice; ///< price at which liq is triggered       [slot 2 lo]
+        uint64 openTimestamp; ///< block.timestamp at open               [slot 3 …]
+        uint64 lastUpdateTimestamp; ///< block.timestamp of last mutation
+        uint32 leverageBps; ///< leverage × 100 (e.g. 500 = 5×)
+        uint8 strategyType; ///< 0=fixed  1=dynamic  2=fundingArb
+        bool isLong; ///< true = long, false = short
+        bool isActive; ///< false after close / liquidation
+        bool isLiquidatable; ///< keeper has flagged this position
+        uint24 _pad; ///< explicit padding, reserved
     }
 
     /**
@@ -182,19 +180,19 @@ contract SynthoraVault is
      * @dev    Layout (3 EVM storage slots).
      */
     struct Strategy {
-        bytes32 assetId;               ///< target synthetic asset            [slot 0]
-        uint128 targetSizeUsd;         ///< desired notional size, USDC       [slot 1 hi]
-        uint128 maxDrawdownBps;        ///< halt if drawdown exceeds X bps    [slot 1 lo]
-        uint64  createdAt;             ///< creation timestamp                [slot 2 …]
-        uint64  lastExecutedAt;        ///< last execution timestamp
-        uint32  leverageBps;           ///< target leverage
-        uint32  rebalanceThresholdBps; ///< drift % to trigger rebalance
-        uint32  profitTakingBps;       ///< profit % to take partial close
-        uint8   strategyType;          ///< 0=fixed  1=dynamic  2=fundingArb
-        bool    isLong;
-        bool    isActive;
-        bool    isNeutral;             ///< market-neutral (funding arb both legs)
-        uint8   _pad;
+        bytes32 assetId; ///< target synthetic asset            [slot 0]
+        uint128 targetSizeUsd; ///< desired notional size, USDC       [slot 1 hi]
+        uint128 maxDrawdownBps; ///< halt if drawdown exceeds X bps    [slot 1 lo]
+        uint64 createdAt; ///< creation timestamp                [slot 2 …]
+        uint64 lastExecutedAt; ///< last execution timestamp
+        uint32 leverageBps; ///< target leverage
+        uint32 rebalanceThresholdBps; ///< drift % to trigger rebalance
+        uint32 profitTakingBps; ///< profit % to take partial close
+        uint8 strategyType; ///< 0=fixed  1=dynamic  2=fundingArb
+        bool isLong;
+        bool isActive;
+        bool isNeutral; ///< market-neutral (funding arb both legs)
+        uint8 _pad;
     }
 
     /**
@@ -202,13 +200,13 @@ contract SynthoraVault is
      * @dev    Layout (2 EVM storage slots).
      */
     struct OracleConfig {
-        bytes32 pythFeedId;          ///< Pyth Network feed ID              [slot 0]
-        address chainlinkFeed;       ///< Chainlink AggregatorV3 address    [slot 1 hi 160 bits]
-        uint32  maxPriceAge;         ///< max acceptable age in seconds
-        uint32  maxDeviationBps;     ///< max oracle divergence in bps
-        bool    isActive;            ///< feed enabled
-        bool    useChainlinkFallback;///< whether to validate against CL
-        uint16  _pad;
+        bytes32 pythFeedId; ///< Pyth Network feed ID              [slot 0]
+        address chainlinkFeed; ///< Chainlink AggregatorV3 address    [slot 1 hi 160 bits]
+        uint32 maxPriceAge; ///< max acceptable age in seconds
+        uint32 maxDeviationBps; ///< max oracle divergence in bps
+        bool isActive; ///< feed enabled
+        bool useChainlinkFallback; ///< whether to validate against CL
+        uint16 _pad;
     }
 
     // =========================================================================
@@ -295,39 +293,39 @@ contract SynthoraVault is
     // =========================================================================
 
     event Deposited(address indexed user, address indexed receiver, uint256 assets, uint256 shares, uint256 fee);
-    event Withdrawn(address indexed caller, address indexed receiver, address indexed owner, uint256 assets, uint256 shares, uint256 fee);
+    event Withdrawn(
+        address indexed caller,
+        address indexed receiver,
+        address indexed owner,
+        uint256 assets,
+        uint256 shares,
+        uint256 fee
+    );
 
     event PositionOpened(
         uint256 indexed positionId,
         bytes32 indexed assetId,
         address indexed opener,
-        bool    isLong,
+        bool isLong,
         uint128 sizeUsd,
         uint128 collateralUsd,
         uint128 entryPrice,
-        uint32  leverageBps,
-        uint8   strategyType
+        uint32 leverageBps,
+        uint8 strategyType
     );
     event PositionClosed(
-        uint256 indexed positionId,
-        bytes32 indexed assetId,
-        uint128 exitPrice,
-        int256  pnl,
-        uint256 performanceFee
+        uint256 indexed positionId, bytes32 indexed assetId, uint128 exitPrice, int256 pnl, uint256 performanceFee
     );
     event PositionAdjusted(
         uint256 indexed positionId,
-        uint32  oldLeverageBps,
-        uint32  newLeverageBps,
+        uint32 oldLeverageBps,
+        uint32 newLeverageBps,
         uint128 oldSizeUsd,
         uint128 newSizeUsd,
         uint128 newLiquidationPrice
     );
     event PositionLiquidated(
-        uint256 indexed positionId,
-        bytes32 indexed assetId,
-        uint128 liquidationPrice,
-        address indexed keeper
+        uint256 indexed positionId, bytes32 indexed assetId, uint128 liquidationPrice, address indexed keeper
     );
     event PositionRebalanced(uint256 indexed positionId, uint32 newLeverageBps, uint128 newSizeUsd, uint256 timestamp);
     event FundingArbitrageExecuted(uint256 indexed positionId, bytes32 indexed assetId, int256 fundingRate);
@@ -338,7 +336,9 @@ contract SynthoraVault is
     event StrategyDeactivated(uint256 indexed strategyId, address deactivator);
 
     event FeesCollected(uint256 performanceFee, uint256 managementFee, address indexed treasury, uint256 timestamp);
-    event FeeConfigUpdated(uint32 performanceFeeBps, uint32 managementFeeBps, uint32 withdrawalFeeBps, uint32 depositFeeBps);
+    event FeeConfigUpdated(
+        uint32 performanceFeeBps, uint32 managementFeeBps, uint32 withdrawalFeeBps, uint32 depositFeeBps
+    );
     event RiskConfigUpdated(RiskConfig newConfig);
     event OracleConfigSet(bytes32 indexed assetId, bytes32 pythFeedId, address chainlinkFeed);
     event AssetWhitelisted(bytes32 indexed assetId, bool status);
@@ -475,23 +475,23 @@ contract SynthoraVault is
      * @param _symbol     Vault share token symbol (e.g. "svUSDC")
      */
     function initialize(
-        address        _asset,
-        address        _pythOracle,
-        address        _treasury,
-        address        _admin,
+        address _asset,
+        address _pythOracle,
+        address _treasury,
+        address _admin,
         string calldata _name,
         string calldata _symbol
     ) external initializer {
         // ── Address validation ────────────────────────────────────────────────
-        if (_asset      == address(0)) revert ZeroAddress();
+        if (_asset == address(0)) revert ZeroAddress();
         if (_pythOracle == address(0)) revert ZeroAddress();
-        if (_treasury   == address(0)) revert ZeroAddress();
-        if (_admin      == address(0)) revert ZeroAddress();
+        if (_treasury == address(0)) revert ZeroAddress();
+        if (_admin == address(0)) revert ZeroAddress();
 
         // ── Base contract initialisers (order matters for linearised C3) ──────
         __UUPSUpgradeable_init();
-        __Ownable_init(_admin);          // sets owner + emits OwnershipTransferred
-        __Ownable2Step_init();           // arms the two-step transfer mechanism
+        __Ownable_init(_admin); // sets owner + emits OwnershipTransferred
+        __Ownable2Step_init(); // arms the two-step transfer mechanism
         __ReentrancyGuard_init();
         __Pausable_init();
         __AccessControl_init();
@@ -500,42 +500,42 @@ contract SynthoraVault is
 
         // ── Role setup ────────────────────────────────────────────────────────
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _grantRole(STRATEGIST_ROLE,    _admin);
-        _grantRole(KEEPER_ROLE,        _admin);
-        _grantRole(PAUSER_ROLE,        _admin);
-        _grantRole(UPGRADER_ROLE,      _admin);
+        _grantRole(STRATEGIST_ROLE, _admin);
+        _grantRole(KEEPER_ROLE, _admin);
+        _grantRole(PAUSER_ROLE, _admin);
+        _grantRole(UPGRADER_ROLE, _admin);
 
         // ── Core addresses ────────────────────────────────────────────────────
         pythOracle = IPyth(_pythOracle);
-        treasury   = _treasury;
+        treasury = _treasury;
 
         // ── Default fee config ────────────────────────────────────────────────
         feeConfig = FeeConfig({
-            performanceFeeBps : 1_000, // 10 %
-            managementFeeBps  :   200, //  2 % p.a.
-            withdrawalFeeBps  :    50, //  0.5 %
-            depositFeeBps     :     0, //  0 %
-            lastFeeCollection : uint64(block.timestamp),
-            _feePad           : 0,
-            accruedFees       : 0
+            performanceFeeBps: 1_000, // 10 %
+            managementFeeBps: 200, //  2 % p.a.
+            withdrawalFeeBps: 50, //  0.5 %
+            depositFeeBps: 0, //  0 %
+            lastFeeCollection: uint64(block.timestamp),
+            _feePad: 0,
+            accruedFees: 0
         });
 
         // ── Default risk config ───────────────────────────────────────────────
         riskConfig = RiskConfig({
-            minLeverageBps          :  100,  //  1×
-            maxLeverageBps          : 2_000, // 20×
-            maxPositionSizeBps      : 2_000, // 20 % of TVL per position
-            liquidationThresholdBps : 8_500, // liq when 85 % of collateral lost
-            maintenanceMarginBps    :   500, //  5 % maintenance margin
-            maxOpenPositions        :    20,
-            maxLeverageForDynamic   : 1_500, // 15× cap for dynamic strategies
-            fundingRateThresholdBps :    10  //  0.10 % min funding rate for arb
+            minLeverageBps: 100, //  1×
+            maxLeverageBps: 2_000, // 20×
+            maxPositionSizeBps: 2_000, // 20 % of TVL per position
+            liquidationThresholdBps: 8_500, // liq when 85 % of collateral lost
+            maintenanceMarginBps: 500, //  5 % maintenance margin
+            maxOpenPositions: 20,
+            maxLeverageForDynamic: 1_500, // 15× cap for dynamic strategies
+            fundingRateThresholdBps: 10 //  0.10 % min funding rate for arb
         });
 
         // ── HWM = 1:1 (1 share = 1 USDC at genesis) ─────────────────────────
-        highWaterMark    = PRICE_PRECISION; // 1e18
+        highWaterMark = PRICE_PRECISION; // 1e18
         minDepositAmount = 100 * USDC_DECIMALS; // $100 USDC minimum
-        tvlCap           = 0;               // uncapped
+        tvlCap = 0; // uncapped
 
         emit TreasuryUpdated(address(0), _treasury);
     }
@@ -566,8 +566,8 @@ contract SynthoraVault is
     {
         _checkDeposit(assets, receiver);
 
-        uint256 fee          = _depositFee(assets);
-        uint256 netAssets    = assets - fee;
+        uint256 fee = _depositFee(assets);
+        uint256 netAssets = assets - fee;
 
         // Shares are calculated on net assets (post-fee), consistent with previewDeposit
         shares = previewDeposit(netAssets);
@@ -610,7 +610,7 @@ contract SynthoraVault is
         assets = previewMint(shares);
         _checkDeposit(assets, receiver);
 
-        uint256 fee       = _depositFee(assets);
+        uint256 fee = _depositFee(assets);
         uint256 netAssets = assets - fee;
 
         lastDepositBlock[receiver] = block.number;
@@ -649,8 +649,8 @@ contract SynthoraVault is
         returns (uint256 shares)
     {
         if (!emergencyMode) _requireNotPaused();
-        if (assets   == 0)             revert ZeroAmount();
-        if (receiver == address(0))    revert ZeroAddress();
+        if (assets == 0) revert ZeroAmount();
+        if (receiver == address(0)) revert ZeroAddress();
 
         uint256 available = _availableLiquidity();
         if (assets > available) revert WithdrawalExceedsAvailableLiquidity(assets, available);
@@ -663,8 +663,8 @@ contract SynthoraVault is
         // Accrue management fees before computing share value
         _sweepManagementFee();
 
-        uint256 fee        = _withdrawalFee(assets);
-        uint256 assetsOut  = assets - fee;
+        uint256 fee = _withdrawalFee(assets);
+        uint256 assetsOut = assets - fee;
 
         _burn(owner, shares);
         if (userDepositedShares[owner] >= shares) {
@@ -690,7 +690,7 @@ contract SynthoraVault is
         returns (uint256 assets)
     {
         if (!emergencyMode) _requireNotPaused();
-        if (shares   == 0)          revert ZeroAmount();
+        if (shares == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroAddress();
 
         assets = previewRedeem(shares);
@@ -702,7 +702,7 @@ contract SynthoraVault is
 
         _sweepManagementFee();
 
-        uint256 fee       = _withdrawalFee(assets);
+        uint256 fee = _withdrawalFee(assets);
         uint256 assetsOut = assets - fee;
 
         _burn(owner, shares);
@@ -725,16 +725,13 @@ contract SynthoraVault is
      * @param shares   Shares to burn
      * @param receiver USDC recipient
      */
-    function emergencyWithdraw(uint256 shares, address receiver)
-        external
-        nonReentrant
-    {
-        if (!emergencyMode)          revert NotInEmergencyMode();
-        if (shares   == 0)           revert ZeroAmount();
-        if (receiver == address(0))  revert ZeroAddress();
+    function emergencyWithdraw(uint256 shares, address receiver) external nonReentrant {
+        if (!emergencyMode) revert NotInEmergencyMode();
+        if (shares == 0) revert ZeroAmount();
+        if (receiver == address(0)) revert ZeroAddress();
 
-        uint256 supply    = totalSupply();
-        uint256 balance   = IERC20(asset()).balanceOf(address(this));
+        uint256 supply = totalSupply();
+        uint256 balance = IERC20(asset()).balanceOf(address(this));
         // Pro-rata share of whatever USDC is actually in the contract
         uint256 assetsOut = (balance * shares) / supply;
 
@@ -772,23 +769,16 @@ contract SynthoraVault is
     function executeStrategy(
         bytes32 assetId,
         uint128 collateralUsd,
-        uint32  leverageBps,
-        bool    isLong,
-        uint8   strategyType,
+        uint32 leverageBps,
+        bool isLong,
+        uint8 strategyType,
         uint128 minEntryPrice,
         uint128 maxEntryPrice
-    )
-        external
-        nonReentrant
-        whenNotPaused
-        routerSet
-        requireRole(STRATEGIST_ROLE)
-        returns (uint256 positionId)
-    {
+    ) external nonReentrant whenNotPaused routerSet requireRole(STRATEGIST_ROLE) returns (uint256 positionId) {
         // ── Pre-condition checks ───────────────────────────────────────────────
         if (!whitelistedAssets[assetId]) revert AssetNotWhitelisted(assetId);
-        if (collateralUsd == 0)          revert ZeroAmount();
-        if (strategyType > 2)            revert InvalidStrategyType(strategyType);
+        if (collateralUsd == 0) revert ZeroAmount();
+        if (strategyType > 2) revert InvalidStrategyType(strategyType);
 
         RiskConfig memory risk = riskConfig;
 
@@ -809,9 +799,7 @@ contract SynthoraVault is
 
         // Compute notional size: size = collateral × leverage / LEVERAGE_PRECISION
         // leverageBps = 500  → leverage multiplier = 500 / 100 = 5×
-        uint128 sizeUsd = uint128(
-            (uint256(collateralUsd) * leverageBps) / LEVERAGE_PRECISION
-        );
+        uint128 sizeUsd = uint128((uint256(collateralUsd) * leverageBps) / LEVERAGE_PRECISION);
 
         // Per-position size cap (fraction of TVL)
         uint256 maxSize = totalAssets().mulDiv(risk.maxPositionSizeBps, BASIS_POINTS, Math.Rounding.Floor);
@@ -826,34 +814,32 @@ contract SynthoraVault is
         }
 
         // ── Liquidation price pre-computation ─────────────────────────────────
-        uint128 liqPrice = _computeLiquidationPrice(
-            entryPrice, leverageBps, isLong, risk.liquidationThresholdBps
-        );
+        uint128 liqPrice = _computeLiquidationPrice(entryPrice, leverageBps, isLong, risk.liquidationThresholdBps);
 
         // ── Store position ─────────────────────────────────────────────────────
         positionId = uint256(++totalPositionsOpened);
 
         positions[positionId] = Position({
-            assetId             : assetId,
-            sizeUsd             : sizeUsd,
-            collateralUsd       : collateralUsd,
-            entryPrice          : entryPrice,
-            liquidationPrice    : liqPrice,
-            openTimestamp       : uint64(block.timestamp),
-            lastUpdateTimestamp : uint64(block.timestamp),
-            leverageBps         : leverageBps,
-            strategyType        : strategyType,
-            isLong              : isLong,
-            isActive            : true,
-            isLiquidatable      : false,
-            _pad                : 0
+            assetId: assetId,
+            sizeUsd: sizeUsd,
+            collateralUsd: collateralUsd,
+            entryPrice: entryPrice,
+            liquidationPrice: liqPrice,
+            openTimestamp: uint64(block.timestamp),
+            lastUpdateTimestamp: uint64(block.timestamp),
+            leverageBps: leverageBps,
+            strategyType: strategyType,
+            isLong: isLong,
+            isActive: true,
+            isLiquidatable: false,
+            _pad: 0
         });
 
-        positionOwners[positionId]  = msg.sender;
-        activePositionCount        += 1;
-        totalCollateralLocked      += collateralUsd;
-        totalNotionalValue         += sizeUsd;
-        assetExposure[assetId]     += sizeUsd;
+        positionOwners[positionId] = msg.sender;
+        activePositionCount += 1;
+        totalCollateralLocked += collateralUsd;
+        totalNotionalValue += sizeUsd;
+        assetExposure[assetId] += sizeUsd;
 
         // ── PLACEHOLDER: route to execution layer ──────────────────────────────
         // In production, replace with:
@@ -862,8 +848,7 @@ contract SynthoraVault is
         _placeholderRouteOpen(assetId, sizeUsd, collateralUsd, isLong, entryPrice);
 
         emit PositionOpened(
-            positionId, assetId, msg.sender,
-            isLong, sizeUsd, collateralUsd, entryPrice, leverageBps, strategyType
+            positionId, assetId, msg.sender, isLong, sizeUsd, collateralUsd, entryPrice, leverageBps, strategyType
         );
     }
 
@@ -876,11 +861,7 @@ contract SynthoraVault is
      * @param minExitPrice  Minimum acceptable price (for shorts, guards against closing too high)
      * @param maxExitPrice  Maximum acceptable price (for longs, guards against closing too low)
      */
-    function closePosition(
-        uint256 positionId,
-        uint128 minExitPrice,
-        uint128 maxExitPrice
-    )
+    function closePosition(uint256 positionId, uint128 minExitPrice, uint128 maxExitPrice)
         external
         nonReentrant
         whenNotPaused
@@ -959,43 +940,38 @@ contract SynthoraVault is
             revert LeverageOutOfRange(newLeverageBps, risk.minLeverageBps, leverageCap);
         }
 
-        uint32  oldLeverage = pos.leverageBps;
-        uint128 oldSize     = pos.sizeUsd;
-        uint128 newSize     = uint128(
-            (uint256(pos.collateralUsd) * newLeverageBps) / LEVERAGE_PRECISION
-        );
+        uint32 oldLeverage = pos.leverageBps;
+        uint128 oldSize = pos.sizeUsd;
+        uint128 newSize = uint128((uint256(pos.collateralUsd) * newLeverageBps) / LEVERAGE_PRECISION);
 
         // Per-position size cap
         uint256 maxSize = totalAssets().mulDiv(risk.maxPositionSizeBps, BASIS_POINTS, Math.Rounding.Floor);
         if (newSize > maxSize) revert PositionSizeTooLarge(newSize, maxSize);
 
         uint128 currentPrice = _getValidatedPrice(pos.assetId);
-        uint128 newLiqPrice  = _computeLiquidationPrice(
-            currentPrice, newLeverageBps, pos.isLong, risk.liquidationThresholdBps
-        );
+        uint128 newLiqPrice =
+            _computeLiquidationPrice(currentPrice, newLeverageBps, pos.isLong, risk.liquidationThresholdBps);
 
         // Update position
-        pos.leverageBps          = newLeverageBps;
-        pos.sizeUsd              = newSize;
-        pos.liquidationPrice     = newLiqPrice;
-        pos.lastUpdateTimestamp  = uint64(block.timestamp);
+        pos.leverageBps = newLeverageBps;
+        pos.sizeUsd = newSize;
+        pos.liquidationPrice = newLiqPrice;
+        pos.lastUpdateTimestamp = uint64(block.timestamp);
 
         // Update global exposure tracking (carefully avoid underflow)
         if (newSize >= oldSize) {
-            uint128 delta          = newSize - oldSize;
-            totalNotionalValue    += delta;
+            uint128 delta = newSize - oldSize;
+            totalNotionalValue += delta;
             assetExposure[pos.assetId] += delta;
         } else {
-            uint128 delta          = oldSize - newSize;
-            totalNotionalValue    -= delta;
+            uint128 delta = oldSize - newSize;
+            totalNotionalValue -= delta;
             assetExposure[pos.assetId] -= delta;
         }
 
         // PLACEHOLDER: router.adjustLeverage(positionId, newSize, newLeverageBps, currentPrice);
 
-        emit PositionAdjusted(
-            positionId, oldLeverage, newLeverageBps, oldSize, newSize, newLiqPrice
-        );
+        emit PositionAdjusted(positionId, oldLeverage, newLeverageBps, oldSize, newSize, newLiqPrice);
     }
 
     /**
@@ -1014,22 +990,16 @@ contract SynthoraVault is
     function createStrategy(
         bytes32 assetId,
         uint128 targetSizeUsd,
-        uint32  leverageBps,
-        bool    isLong,
-        bool    isNeutral,
-        uint8   strategyType,
+        uint32 leverageBps,
+        bool isLong,
+        bool isNeutral,
+        uint8 strategyType,
         uint128 maxDrawdownBps,
-        uint32  rebalanceThresholdBps,
-        uint32  profitTakingBps
-    )
-        external
-        nonReentrant
-        whenNotPaused
-        requireRole(STRATEGIST_ROLE)
-        returns (uint256 strategyId)
-    {
+        uint32 rebalanceThresholdBps,
+        uint32 profitTakingBps
+    ) external nonReentrant whenNotPaused requireRole(STRATEGIST_ROLE) returns (uint256 strategyId) {
         if (!whitelistedAssets[assetId]) revert AssetNotWhitelisted(assetId);
-        if (strategyType > 2)            revert InvalidStrategyType(strategyType);
+        if (strategyType > 2) revert InvalidStrategyType(strategyType);
 
         RiskConfig memory risk = riskConfig;
         uint32 leverageCap = strategyType == 1 ? risk.maxLeverageForDynamic : risk.maxLeverageBps;
@@ -1040,19 +1010,19 @@ contract SynthoraVault is
         strategyId = ++strategyCount;
 
         strategies[strategyId] = Strategy({
-            assetId               : assetId,
-            targetSizeUsd         : targetSizeUsd,
-            maxDrawdownBps        : maxDrawdownBps,
-            createdAt             : uint64(block.timestamp),
-            lastExecutedAt        : 0,
-            leverageBps           : leverageBps,
-            rebalanceThresholdBps : rebalanceThresholdBps,
-            profitTakingBps       : profitTakingBps,
-            strategyType          : strategyType,
-            isLong                : isLong,
-            isActive              : true,
-            isNeutral             : isNeutral,
-            _pad                  : 0
+            assetId: assetId,
+            targetSizeUsd: targetSizeUsd,
+            maxDrawdownBps: maxDrawdownBps,
+            createdAt: uint64(block.timestamp),
+            lastExecutedAt: 0,
+            leverageBps: leverageBps,
+            rebalanceThresholdBps: rebalanceThresholdBps,
+            profitTakingBps: profitTakingBps,
+            strategyType: strategyType,
+            isLong: isLong,
+            isActive: true,
+            isNeutral: isNeutral,
+            _pad: 0
         });
 
         emit StrategyCreated(strategyId, assetId, strategyType, msg.sender);
@@ -1063,14 +1033,11 @@ contract SynthoraVault is
      */
     function updateStrategy(
         uint256 strategyId,
-        uint32  newLeverageBps,
+        uint32 newLeverageBps,
         uint128 newTargetSize,
-        uint32  newRebalanceThreshold,
-        uint32  newProfitTaking
-    )
-        external
-        requireRole(STRATEGIST_ROLE)
-    {
+        uint32 newRebalanceThreshold,
+        uint32 newProfitTaking
+    ) external requireRole(STRATEGIST_ROLE) {
         Strategy storage strat = strategies[strategyId];
         if (!strat.isActive) revert StrategyNotActive(strategyId);
 
@@ -1080,10 +1047,10 @@ contract SynthoraVault is
             revert LeverageOutOfRange(newLeverageBps, risk.minLeverageBps, leverageCap);
         }
 
-        strat.leverageBps           = newLeverageBps;
-        strat.targetSizeUsd         = newTargetSize;
+        strat.leverageBps = newLeverageBps;
+        strat.targetSizeUsd = newTargetSize;
         strat.rebalanceThresholdBps = newRebalanceThreshold;
-        strat.profitTakingBps       = newProfitTaking;
+        strat.profitTakingBps = newProfitTaking;
 
         emit StrategyUpdated(strategyId, newLeverageBps, newTargetSize);
     }
@@ -1091,10 +1058,7 @@ contract SynthoraVault is
     /**
      * @notice Deactivates a strategy so keepers will no longer execute it.
      */
-    function deactivateStrategy(uint256 strategyId)
-        external
-        requireRole(STRATEGIST_ROLE)
-    {
+    function deactivateStrategy(uint256 strategyId) external requireRole(STRATEGIST_ROLE) {
         Strategy storage strat = strategies[strategyId];
         if (strat.assetId == bytes32(0)) revert StrategyNotFound(strategyId);
         strat.isActive = false;
@@ -1112,12 +1076,7 @@ contract SynthoraVault is
      *
      * @param positionId Position to liquidate
      */
-    function liquidatePosition(uint256 positionId)
-        external
-        nonReentrant
-        requireRole(KEEPER_ROLE)
-        routerSet
-    {
+    function liquidatePosition(uint256 positionId) external nonReentrant requireRole(KEEPER_ROLE) routerSet {
         Position storage pos = positions[positionId];
         if (!pos.isActive) revert PositionNotActive(positionId);
 
@@ -1150,45 +1109,40 @@ contract SynthoraVault is
         routerSet
     {
         Position storage pos = positions[positionId];
-        if (!pos.isActive)     revert PositionNotActive(positionId);
+        if (!pos.isActive) revert PositionNotActive(positionId);
         if (pos.strategyType == 0) return; // Fixed leverage — skip
 
         uint128 currentPrice = _getValidatedPrice(pos.assetId);
-        int256  pnl          = _unrealisedPnL(pos, currentPrice);
-        uint32  newLeverage  = _computeDynamicLeverage(pos, currentPrice, pnl);
+        int256 pnl = _unrealisedPnL(pos, currentPrice);
+        uint32 newLeverage = _computeDynamicLeverage(pos, currentPrice, pnl);
 
         if (newLeverage == pos.leverageBps) return; // No change needed
 
-        uint128 oldSize  = pos.sizeUsd;
-        uint128 newSize  = uint128(
-            (uint256(pos.collateralUsd) * newLeverage) / LEVERAGE_PRECISION
-        );
+        uint128 oldSize = pos.sizeUsd;
+        uint128 newSize = uint128((uint256(pos.collateralUsd) * newLeverage) / LEVERAGE_PRECISION);
 
         // Clamp to per-position size cap
-        uint256 maxSize = totalAssets().mulDiv(
-            riskConfig.maxPositionSizeBps, BASIS_POINTS, Math.Rounding.Floor
-        );
+        uint256 maxSize = totalAssets().mulDiv(riskConfig.maxPositionSizeBps, BASIS_POINTS, Math.Rounding.Floor);
         if (newSize > uint128(maxSize)) newSize = uint128(maxSize);
 
         // Update global notional tracking
         if (newSize >= oldSize) {
             uint128 delta = newSize - oldSize;
-            totalNotionalValue        += delta;
+            totalNotionalValue += delta;
             assetExposure[pos.assetId] += delta;
         } else {
             uint128 delta = oldSize - newSize;
-            totalNotionalValue        -= delta;
+            totalNotionalValue -= delta;
             assetExposure[pos.assetId] -= delta;
         }
 
-        uint128 newLiqPrice = _computeLiquidationPrice(
-            currentPrice, newLeverage, pos.isLong, riskConfig.liquidationThresholdBps
-        );
+        uint128 newLiqPrice =
+            _computeLiquidationPrice(currentPrice, newLeverage, pos.isLong, riskConfig.liquidationThresholdBps);
 
-        pos.sizeUsd              = newSize;
-        pos.leverageBps          = newLeverage;
-        pos.liquidationPrice     = newLiqPrice;
-        pos.lastUpdateTimestamp  = uint64(block.timestamp);
+        pos.sizeUsd = newSize;
+        pos.leverageBps = newLeverage;
+        pos.liquidationPrice = newLiqPrice;
+        pos.lastUpdateTimestamp = uint64(block.timestamp);
 
         emit PositionRebalanced(positionId, newLeverage, newSize, block.timestamp);
     }
@@ -1210,7 +1164,7 @@ contract SynthoraVault is
         routerSet
     {
         Position storage pos = positions[positionId];
-        if (!pos.isActive)    revert PositionNotActive(positionId);
+        if (!pos.isActive) revert PositionNotActive(positionId);
         if (pos.strategyType != 2) revert InvalidStrategyType(pos.strategyType);
 
         // Only act if funding rate crosses the threshold
@@ -1233,10 +1187,7 @@ contract SynthoraVault is
      *
      * @param positionIds Array of position IDs to evaluate (calldata — gas efficient)
      */
-    function flagPositionsForLiquidation(uint256[] calldata positionIds)
-        external
-        requireRole(KEEPER_ROLE)
-    {
+    function flagPositionsForLiquidation(uint256[] calldata positionIds) external requireRole(KEEPER_ROLE) {
         uint256 len = positionIds.length;
         for (uint256 i; i < len;) {
             uint256 pid = positionIds[i];
@@ -1245,9 +1196,7 @@ contract SynthoraVault is
             if (pos.isActive && !pos.isLiquidatable) {
                 OracleConfig memory cfg = oracleConfigs[pos.assetId];
                 if (cfg.isActive) {
-                    try pythOracle.getPriceNoOlderThan(cfg.pythFeedId, cfg.maxPriceAge)
-                        returns (IPyth.Price memory p)
-                    {
+                    try pythOracle.getPriceNoOlderThan(cfg.pythFeedId, cfg.maxPriceAge) returns (IPyth.Price memory p) {
                         if (p.price > 0) {
                             uint128 price = uint128(uint64(p.price));
                             if (_isLiquidatable(pos, price)) {
@@ -1259,7 +1208,9 @@ contract SynthoraVault is
                 }
             }
 
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -1277,21 +1228,18 @@ contract SynthoraVault is
         uint32 managementFeeBps,
         uint32 withdrawalFeeBps,
         uint32 depositFeeBps
-    )
-        external
-        requireRole(DEFAULT_ADMIN_ROLE)
-    {
-        if (performanceFeeBps > MAX_FEE_BPS)          revert InvalidFee(performanceFeeBps, MAX_FEE_BPS);
-        if (managementFeeBps  > MAX_MGMT_FEE_BPS)     revert InvalidFee(managementFeeBps,  MAX_MGMT_FEE_BPS);
-        if (withdrawalFeeBps  > MAX_ENTRY_EXIT_FEE_BPS) revert InvalidFee(withdrawalFeeBps, MAX_ENTRY_EXIT_FEE_BPS);
-        if (depositFeeBps     > MAX_ENTRY_EXIT_FEE_BPS) revert InvalidFee(depositFeeBps,    MAX_ENTRY_EXIT_FEE_BPS);
+    ) external requireRole(DEFAULT_ADMIN_ROLE) {
+        if (performanceFeeBps > MAX_FEE_BPS) revert InvalidFee(performanceFeeBps, MAX_FEE_BPS);
+        if (managementFeeBps > MAX_MGMT_FEE_BPS) revert InvalidFee(managementFeeBps, MAX_MGMT_FEE_BPS);
+        if (withdrawalFeeBps > MAX_ENTRY_EXIT_FEE_BPS) revert InvalidFee(withdrawalFeeBps, MAX_ENTRY_EXIT_FEE_BPS);
+        if (depositFeeBps > MAX_ENTRY_EXIT_FEE_BPS) revert InvalidFee(depositFeeBps, MAX_ENTRY_EXIT_FEE_BPS);
 
         _sweepManagementFee(); // Settle with old rate first
 
         feeConfig.performanceFeeBps = performanceFeeBps;
-        feeConfig.managementFeeBps  = managementFeeBps;
-        feeConfig.withdrawalFeeBps  = withdrawalFeeBps;
-        feeConfig.depositFeeBps     = depositFeeBps;
+        feeConfig.managementFeeBps = managementFeeBps;
+        feeConfig.withdrawalFeeBps = withdrawalFeeBps;
+        feeConfig.depositFeeBps = depositFeeBps;
 
         emit FeeConfigUpdated(performanceFeeBps, managementFeeBps, withdrawalFeeBps, depositFeeBps);
     }
@@ -1310,30 +1258,29 @@ contract SynthoraVault is
         uint32 maxOpenPositions,
         uint32 maxLeverageForDynamic,
         uint32 fundingRateThresholdBps
-    )
-        external
-        requireRole(DEFAULT_ADMIN_ROLE)
-    {
-        if (minLeverageBps < MIN_LEVERAGE_BPS)             revert InvalidRiskConfig("minLev < 1x");
-        if (maxLeverageBps > MAX_LEVERAGE_BPS * LEVERAGE_PRECISION)
-                                                            revert InvalidRiskConfig("maxLev > 20x");
-        if (maxLeverageBps <= minLeverageBps)              revert InvalidRiskConfig("max <= min");
-        if (maxPositionSizeBps > 5_000)                    revert InvalidRiskConfig("posSz > 50%");
-        if (liquidationThresholdBps < 5_000 || liquidationThresholdBps > 9_900)
-                                                            revert InvalidRiskConfig("liqThresh OOB");
+    ) external requireRole(DEFAULT_ADMIN_ROLE) {
+        if (minLeverageBps < MIN_LEVERAGE_BPS) revert InvalidRiskConfig("minLev < 1x");
+        if (maxLeverageBps > MAX_LEVERAGE_BPS * LEVERAGE_PRECISION) {
+            revert InvalidRiskConfig("maxLev > 20x");
+        }
+        if (maxLeverageBps <= minLeverageBps) revert InvalidRiskConfig("max <= min");
+        if (maxPositionSizeBps > 5_000) revert InvalidRiskConfig("posSz > 50%");
+        if (liquidationThresholdBps < 5_000 || liquidationThresholdBps > 9_900) {
+            revert InvalidRiskConfig("liqThresh OOB");
+        }
         if (maintenanceMarginBps > liquidationThresholdBps) revert InvalidRiskConfig("maint > liq");
         if (maxOpenPositions == 0 || maxOpenPositions > 100) revert InvalidRiskConfig("positions OOB");
-        if (maxLeverageForDynamic > maxLeverageBps)        revert InvalidRiskConfig("dynLev > maxLev");
+        if (maxLeverageForDynamic > maxLeverageBps) revert InvalidRiskConfig("dynLev > maxLev");
 
         riskConfig = RiskConfig({
-            minLeverageBps          : minLeverageBps,
-            maxLeverageBps          : maxLeverageBps,
-            maxPositionSizeBps      : maxPositionSizeBps,
-            liquidationThresholdBps : liquidationThresholdBps,
-            maintenanceMarginBps    : maintenanceMarginBps,
-            maxOpenPositions        : maxOpenPositions,
-            maxLeverageForDynamic   : maxLeverageForDynamic,
-            fundingRateThresholdBps : fundingRateThresholdBps
+            minLeverageBps: minLeverageBps,
+            maxLeverageBps: maxLeverageBps,
+            maxPositionSizeBps: maxPositionSizeBps,
+            liquidationThresholdBps: liquidationThresholdBps,
+            maintenanceMarginBps: maintenanceMarginBps,
+            maxOpenPositions: maxOpenPositions,
+            maxLeverageForDynamic: maxLeverageForDynamic,
+            fundingRateThresholdBps: fundingRateThresholdBps
         });
 
         emit RiskConfigUpdated(riskConfig);
@@ -1352,44 +1299,35 @@ contract SynthoraVault is
         bytes32 assetId,
         bytes32 pythFeedId,
         address chainlinkFeed,
-        uint32  maxPriceAge,
-        uint32  maxDeviationBps,
-        bool    useChainlinkFallback
-    )
-        external
-        requireRole(DEFAULT_ADMIN_ROLE)
-    {
-        if (pythFeedId == bytes32(0))                   revert InvalidRiskConfig("pythFeedId zero");
-        if (maxPriceAge == 0 || maxPriceAge > 3_600)    revert InvalidRiskConfig("maxAge OOB");
-        if (maxDeviationBps > 1_000)                    revert InvalidRiskConfig("deviation > 10%");
+        uint32 maxPriceAge,
+        uint32 maxDeviationBps,
+        bool useChainlinkFallback
+    ) external requireRole(DEFAULT_ADMIN_ROLE) {
+        if (pythFeedId == bytes32(0)) revert InvalidRiskConfig("pythFeedId zero");
+        if (maxPriceAge == 0 || maxPriceAge > 3_600) revert InvalidRiskConfig("maxAge OOB");
+        if (maxDeviationBps > 1_000) revert InvalidRiskConfig("deviation > 10%");
 
         oracleConfigs[assetId] = OracleConfig({
-            pythFeedId           : pythFeedId,
-            chainlinkFeed        : chainlinkFeed,
-            maxPriceAge          : maxPriceAge,
-            maxDeviationBps      : maxDeviationBps,
-            isActive             : true,
-            useChainlinkFallback : useChainlinkFallback,
-            _pad                 : 0
+            pythFeedId: pythFeedId,
+            chainlinkFeed: chainlinkFeed,
+            maxPriceAge: maxPriceAge,
+            maxDeviationBps: maxDeviationBps,
+            isActive: true,
+            useChainlinkFallback: useChainlinkFallback,
+            _pad: 0
         });
 
         emit OracleConfigSet(assetId, pythFeedId, chainlinkFeed);
     }
 
     /// @notice Enables or disables an asset for trading.
-    function setAssetWhitelist(bytes32 assetId, bool status)
-        external
-        requireRole(DEFAULT_ADMIN_ROLE)
-    {
+    function setAssetWhitelist(bytes32 assetId, bool status) external requireRole(DEFAULT_ADMIN_ROLE) {
         whitelistedAssets[assetId] = status;
         emit AssetWhitelisted(assetId, status);
     }
 
     /// @notice Replaces the order-execution router.
-    function setRouter(address newRouter)
-        external
-        requireRole(DEFAULT_ADMIN_ROLE)
-    {
+    function setRouter(address newRouter) external requireRole(DEFAULT_ADMIN_ROLE) {
         if (newRouter == address(0)) revert ZeroAddress();
         address old = address(router);
         router = ISynthoraRouter(newRouter);
@@ -1397,10 +1335,7 @@ contract SynthoraVault is
     }
 
     /// @notice Replaces the treasury address.
-    function setTreasury(address newTreasury)
-        external
-        requireRole(DEFAULT_ADMIN_ROLE)
-    {
+    function setTreasury(address newTreasury) external requireRole(DEFAULT_ADMIN_ROLE) {
         if (newTreasury == address(0)) revert ZeroAddress();
         address old = treasury;
         treasury = newTreasury;
@@ -1408,38 +1343,25 @@ contract SynthoraVault is
     }
 
     /// @notice Sets the TVL cap. Pass 0 to remove the cap.
-    function setTvlCap(uint256 newCap)
-        external
-        requireRole(DEFAULT_ADMIN_ROLE)
-    {
+    function setTvlCap(uint256 newCap) external requireRole(DEFAULT_ADMIN_ROLE) {
         emit TvlCapUpdated(tvlCap, newCap);
         tvlCap = newCap;
     }
 
     /// @notice Sets the minimum deposit amount (USDC, 6-dec).
-    function setMinDeposit(uint256 newMin)
-        external
-        requireRole(DEFAULT_ADMIN_ROLE)
-    {
+    function setMinDeposit(uint256 newMin) external requireRole(DEFAULT_ADMIN_ROLE) {
         emit MinDepositUpdated(minDepositAmount, newMin);
         minDepositAmount = newMin;
     }
 
     /// @notice Locks or unlocks new deposits (e.g. at TVL cap, during audits).
-    function setDepositsLocked(bool locked)
-        external
-        requireRole(DEFAULT_ADMIN_ROLE)
-    {
+    function setDepositsLocked(bool locked) external requireRole(DEFAULT_ADMIN_ROLE) {
         depositsLocked = locked;
         emit DepositsLocked(locked, msg.sender);
     }
 
     /// @notice Manually sweeps accrued management fees to treasury.
-    function collectManagementFees()
-        external
-        requireRole(DEFAULT_ADMIN_ROLE)
-        treasurySet
-    {
+    function collectManagementFees() external requireRole(DEFAULT_ADMIN_ROLE) treasurySet {
         _sweepManagementFee();
     }
 
@@ -1448,10 +1370,14 @@ contract SynthoraVault is
     // =========================================================================
 
     /// @notice Pauses the vault — prevents deposits, withdrawals, and new positions.
-    function pause() external requireRole(PAUSER_ROLE) { _pause(); }
+    function pause() external requireRole(PAUSER_ROLE) {
+        _pause();
+    }
 
     /// @notice Unpauses — only DEFAULT_ADMIN_ROLE to prevent misuse by pausers.
-    function unpause() external requireRole(DEFAULT_ADMIN_ROLE) { _unpause(); }
+    function unpause() external requireRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
+    }
 
     /**
      * @notice Activates emergency mode.
@@ -1536,18 +1462,15 @@ contract SynthoraVault is
         OracleConfig memory cfg = oracleConfigs[pos.assetId];
         if (!cfg.isActive) return 0;
 
-        try pythOracle.getPriceNoOlderThan(cfg.pythFeedId, cfg.maxPriceAge)
-            returns (IPyth.Price memory p)
-        {
+        try pythOracle.getPriceNoOlderThan(cfg.pythFeedId, cfg.maxPriceAge) returns (IPyth.Price memory p) {
             if (p.price <= 0) return 0;
-            uint128 price          = uint128(uint64(p.price));
-            int256  pnl            = _unrealisedPnL(pos, price);
-            int256  effectiveColl  = int256(uint256(pos.collateralUsd)) + pnl;
+            uint128 price = uint128(uint64(p.price));
+            int256 pnl = _unrealisedPnL(pos, price);
+            int256 effectiveColl = int256(uint256(pos.collateralUsd)) + pnl;
             if (effectiveColl <= 0) return 0;
 
-            uint256 maintenanceReq = pos.sizeUsd.mulDiv(
-                riskConfig.maintenanceMarginBps, BASIS_POINTS, Math.Rounding.Ceil
-            );
+            uint256 maintenanceReq =
+                pos.sizeUsd.mulDiv(riskConfig.maintenanceMarginBps, BASIS_POINTS, Math.Rounding.Ceil);
             if (maintenanceReq == 0) return type(uint256).max;
 
             healthBps = uint256(effectiveColl).mulDiv(BASIS_POINTS, maintenanceReq, Math.Rounding.Floor);
@@ -1570,9 +1493,7 @@ contract SynthoraVault is
         OracleConfig memory cfg = oracleConfigs[pos.assetId];
         if (!cfg.isActive) return 0;
 
-        try pythOracle.getPriceNoOlderThan(cfg.pythFeedId, cfg.maxPriceAge)
-            returns (IPyth.Price memory p)
-        {
+        try pythOracle.getPriceNoOlderThan(cfg.pythFeedId, cfg.maxPriceAge) returns (IPyth.Price memory p) {
             if (p.price <= 0) return 0;
             pnl = _unrealisedPnL(pos, uint128(uint64(p.price)));
         } catch {}
@@ -1596,12 +1517,10 @@ contract SynthoraVault is
         if (!cfg.isActive) revert OracleNotConfigured(assetId);
 
         IPyth.Price memory p = pythOracle.getPriceUnsafe(cfg.pythFeedId);
-        price       = uint128(uint64(p.price));
+        price = uint128(uint64(p.price));
         publishTime = p.publishTime;
         // Confidence expressed as a percentage of the price (in bps)
-        confidenceBps = price > 0
-            ? uint256(p.conf).mulDiv(BASIS_POINTS, uint256(price), Math.Rounding.Ceil)
-            : 0;
+        confidenceBps = price > 0 ? uint256(p.conf).mulDiv(BASIS_POINTS, uint256(price), Math.Rounding.Ceil) : 0;
     }
 
     // ── (8) ─────────────────────────────────────────────────────────────────
@@ -1617,9 +1536,7 @@ contract SynthoraVault is
         OracleConfig memory cfg = oracleConfigs[pos.assetId];
         if (!cfg.isActive) return false;
 
-        try pythOracle.getPriceNoOlderThan(cfg.pythFeedId, cfg.maxPriceAge)
-            returns (IPyth.Price memory p)
-        {
+        try pythOracle.getPriceNoOlderThan(cfg.pythFeedId, cfg.maxPriceAge) returns (IPyth.Price memory p) {
             if (p.price <= 0) return false;
             return _isLiquidatable(pos, uint128(uint64(p.price)));
         } catch {
@@ -1646,31 +1563,28 @@ contract SynthoraVault is
     function getVaultMetrics()
         external
         view
-        returns (
-            uint256 utilizationBps,
-            uint256 totalExposureUsd,
-            uint256 openPositions,
-            uint256 liquidUsd
-        )
+        returns (uint256 utilizationBps, uint256 totalExposureUsd, uint256 openPositions, uint256 liquidUsd)
     {
-        uint256 assets      = totalAssets();
-        utilizationBps      = assets > 0
-            ? totalCollateralLocked.mulDiv(BASIS_POINTS, assets, Math.Rounding.Floor)
-            : 0;
-        totalExposureUsd    = totalNotionalValue;
-        openPositions       = activePositionCount;
-        liquidUsd           = _availableLiquidity();
+        uint256 assets = totalAssets();
+        utilizationBps = assets > 0 ? totalCollateralLocked.mulDiv(BASIS_POINTS, assets, Math.Rounding.Floor) : 0;
+        totalExposureUsd = totalNotionalValue;
+        openPositions = activePositionCount;
+        liquidUsd = _availableLiquidity();
     }
 
     // ── (11) ────────────────────────────────────────────────────────────────
 
     /// @notice Returns the packed fee configuration struct.
-    function getFeeConfig() external view returns (FeeConfig memory) { return feeConfig; }
+    function getFeeConfig() external view returns (FeeConfig memory) {
+        return feeConfig;
+    }
 
     // ── (12) ────────────────────────────────────────────────────────────────
 
     /// @notice Returns the packed risk configuration struct.
-    function getRiskConfig() external view returns (RiskConfig memory) { return riskConfig; }
+    function getRiskConfig() external view returns (RiskConfig memory) {
+        return riskConfig;
+    }
 
     // ── (13) ────────────────────────────────────────────────────────────────
 
@@ -1680,12 +1594,8 @@ contract SynthoraVault is
      * @return shares  Expected shares minted
      * @return fee     Deposit fee in USDC
      */
-    function previewDepositAfterFee(uint256 assets)
-        external
-        view
-        returns (uint256 shares, uint256 fee)
-    {
-        fee    = _depositFee(assets);
+    function previewDepositAfterFee(uint256 assets) external view returns (uint256 shares, uint256 fee) {
+        fee = _depositFee(assets);
         shares = previewDeposit(assets - fee);
     }
 
@@ -1697,11 +1607,7 @@ contract SynthoraVault is
      * @return net    USDC the redeemer receives after fee
      * @return fee    Withdrawal fee in USDC
      */
-    function previewRedeemAfterFee(uint256 shares)
-        external
-        view
-        returns (uint256 net, uint256 fee)
-    {
+    function previewRedeemAfterFee(uint256 shares) external view returns (uint256 net, uint256 fee) {
         uint256 gross = previewRedeem(shares);
         fee = _withdrawalFee(gross);
         net = gross - fee;
@@ -1714,7 +1620,7 @@ contract SynthoraVault is
      * @return fee USDC (6-dec) owed as of this block
      */
     function getAccruedManagementFee() external view returns (uint256 fee) {
-        uint256 elapsed   = block.timestamp - feeConfig.lastFeeCollection;
+        uint256 elapsed = block.timestamp - feeConfig.lastFeeCollection;
         uint256 annualFee = totalAssets().mulDiv(feeConfig.managementFeeBps, BASIS_POINTS, Math.Rounding.Floor);
         fee = annualFee.mulDiv(elapsed, 365 days, Math.Rounding.Floor);
     }
@@ -1734,16 +1640,10 @@ contract SynthoraVault is
      * @return notionalUsd     Total notional (USDC 6-dec)
      * @return exposureBps     Notional as % of TVL (basis points)
      */
-    function getAssetExposure(bytes32 assetId)
-        external
-        view
-        returns (uint256 notionalUsd, uint256 exposureBps)
-    {
-        notionalUsd  = assetExposure[assetId];
-        uint256 tvl  = totalAssets();
-        exposureBps  = tvl > 0
-            ? notionalUsd.mulDiv(BASIS_POINTS, tvl, Math.Rounding.Floor)
-            : 0;
+    function getAssetExposure(bytes32 assetId) external view returns (uint256 notionalUsd, uint256 exposureBps) {
+        notionalUsd = assetExposure[assetId];
+        uint256 tvl = totalAssets();
+        exposureBps = tvl > 0 ? notionalUsd.mulDiv(BASIS_POINTS, tvl, Math.Rounding.Floor) : 0;
     }
 
     // ── (18) ────────────────────────────────────────────────────────────────
@@ -1758,14 +1658,10 @@ contract SynthoraVault is
     function getUserSummary(address user)
         external
         view
-        returns (
-            uint256 sharesOwned,
-            uint256 assetsOwned,
-            uint256 depositedShares
-        )
+        returns (uint256 sharesOwned, uint256 assetsOwned, uint256 depositedShares)
     {
-        sharesOwned    = balanceOf(user);
-        assetsOwned    = convertToAssets(sharesOwned);
+        sharesOwned = balanceOf(user);
+        assetsOwned = convertToAssets(sharesOwned);
         depositedShares = userDepositedShares[user];
     }
 
@@ -1776,23 +1672,17 @@ contract SynthoraVault is
      * @param positionId Position to evaluate
      * @return suggestedLeverageBps Suggested new leverage (or current if unchanged)
      */
-    function estimateDynamicLeverage(uint256 positionId)
-        external
-        view
-        returns (uint32 suggestedLeverageBps)
-    {
+    function estimateDynamicLeverage(uint256 positionId) external view returns (uint32 suggestedLeverageBps) {
         Position memory pos = positions[positionId];
         if (!pos.isActive || pos.strategyType == 0) return pos.leverageBps;
 
         OracleConfig memory cfg = oracleConfigs[pos.assetId];
         if (!cfg.isActive) return pos.leverageBps;
 
-        try pythOracle.getPriceNoOlderThan(cfg.pythFeedId, cfg.maxPriceAge)
-            returns (IPyth.Price memory p)
-        {
+        try pythOracle.getPriceNoOlderThan(cfg.pythFeedId, cfg.maxPriceAge) returns (IPyth.Price memory p) {
             if (p.price <= 0) return pos.leverageBps;
             uint128 price = uint128(uint64(p.price));
-            int256  pnl   = _unrealisedPnL(pos, price);
+            int256 pnl = _unrealisedPnL(pos, price);
             suggestedLeverageBps = _computeDynamicLeverage(pos, price, pnl);
         } catch {
             return pos.leverageBps;
@@ -1802,12 +1692,16 @@ contract SynthoraVault is
     // ── (20) ────────────────────────────────────────────────────────────────
 
     /// @notice Returns the current high-water mark (assets-per-share, 18-dec).
-    function getHighWaterMark() external view returns (uint256) { return highWaterMark; }
+    function getHighWaterMark() external view returns (uint256) {
+        return highWaterMark;
+    }
 
     // ── (21) ────────────────────────────────────────────────────────────────
 
     /// @notice Returns the implementation version constant.
-    function version() external pure returns (uint256) { return VERSION; }
+    function version() external pure returns (uint256) {
+        return VERSION;
+    }
 
     // ── (22) ────────────────────────────────────────────────────────────────
 
@@ -1817,12 +1711,8 @@ contract SynthoraVault is
      * @return blocked            True if same-block deposit prevents withdrawal
      * @return unblocksAtBlock    Block number after which withdrawal is allowed
      */
-    function canWithdraw(address user)
-        external
-        view
-        returns (bool blocked, uint256 unblocksAtBlock)
-    {
-        blocked         = lastDepositBlock[user] == block.number;
+    function canWithdraw(address user) external view returns (bool blocked, uint256 unblocksAtBlock) {
+        blocked = lastDepositBlock[user] == block.number;
         unblocksAtBlock = blocked ? block.number + 1 : block.number;
     }
 
@@ -1856,11 +1746,7 @@ contract SynthoraVault is
      * @notice Computes the liquidation price for given parameters without opening a position.
      * @dev    Useful for frontends to display the expected liquidation level before confirming.
      */
-    function previewLiquidationPrice(
-        uint128 entryPrice,
-        uint32  leverageBps,
-        bool    isLong
-    )
+    function previewLiquidationPrice(uint128 entryPrice, uint32 leverageBps, bool isLong)
         external
         view
         returns (uint128 liqPrice)
@@ -1880,7 +1766,14 @@ contract SynthoraVault is
      * @param receiver Address that would receive the shares
      * @return maxUSDC Maximum depositable amount in USDC (6-dec); 0 if locked
      */
-    function maxDeposit(address /*receiver*/) public view override returns (uint256 maxUSDC) {
+    function maxDeposit(
+        address /*receiver*/
+    )
+        public
+        view
+        override
+        returns (uint256 maxUSDC)
+    {
         if (depositsLocked || paused()) return 0;
         if (tvlCap == 0) return type(uint256).max;
         uint256 current = totalAssets();
@@ -1896,10 +1789,10 @@ contract SynthoraVault is
      * @dev Shared pre-condition checks for deposit() and mint().
      */
     function _checkDeposit(uint256 assets, address receiver) internal view {
-        if (depositsLocked)              revert DepositsCurrentlyLocked();
-        if (assets == 0)                 revert ZeroAmount();
-        if (receiver == address(0))      revert ZeroAddress();
-        if (assets < minDepositAmount)   revert BelowMinDeposit(assets, minDepositAmount);
+        if (depositsLocked) revert DepositsCurrentlyLocked();
+        if (assets == 0) revert ZeroAmount();
+        if (receiver == address(0)) revert ZeroAddress();
+        if (assets < minDepositAmount) revert BelowMinDeposit(assets, minDepositAmount);
         if (tvlCap > 0 && totalAssets() + assets > tvlCap) {
             revert TvlCapExceeded(totalAssets() + assets, tvlCap);
         }
@@ -1940,7 +1833,7 @@ contract SynthoraVault is
             if (clPrice > 0) {
                 uint256 deviation = price > clPrice
                     ? (uint256(price - clPrice)).mulDiv(BASIS_POINTS, clPrice, Math.Rounding.Ceil)
-                    : (uint256(clPrice - price)).mulDiv(BASIS_POINTS, price,  Math.Rounding.Ceil);
+                    : (uint256(clPrice - price)).mulDiv(BASIS_POINTS, price, Math.Rounding.Ceil);
 
                 if (deviation > cfg.maxDeviationBps) {
                     revert OracleDeviationTooHigh(assetId, deviation, cfg.maxDeviationBps);
@@ -1954,7 +1847,13 @@ contract SynthoraVault is
      *      PLACEHOLDER — connect to IChainlinkAggregator(feed).latestRoundData() in production.
      *      Returns 0 on any failure so callers can skip the deviation check gracefully.
      */
-    function _readChainlinkPrice(address /*feed*/) internal pure returns (uint128) {
+    function _readChainlinkPrice(
+        address /*feed*/
+    )
+        internal
+        pure
+        returns (uint128)
+    {
         // INTEGRATION POINT — replace body with:
         // (uint80 roundId, int256 answer, , uint256 updatedAt, uint80 answeredInRound)
         //     = IChainlinkAggregator(feed).latestRoundData();
@@ -1989,12 +1888,7 @@ contract SynthoraVault is
      *        priceMove = entryPrice × 8500 × 100 / (10000 × 1000) = entryPrice × 0.085
      *        liqPrice  = entryPrice × 0.915  (8.5% below entry) ✓
      */
-    function _computeLiquidationPrice(
-        uint128 entryPrice,
-        uint32  leverageBps,
-        bool    isLong,
-        uint32  liqThresholdBps
-    )
+    function _computeLiquidationPrice(uint128 entryPrice, uint32 leverageBps, bool isLong, uint32 liqThresholdBps)
         internal
         pure
         returns (uint128)
@@ -2002,7 +1896,7 @@ contract SynthoraVault is
         uint256 priceMove = uint256(entryPrice)
             .mulDiv(
                 uint256(liqThresholdBps) * LEVERAGE_PRECISION,
-                uint256(BASIS_POINTS)    * uint256(leverageBps),
+                uint256(BASIS_POINTS) * uint256(leverageBps),
                 Math.Rounding.Ceil
             );
 
@@ -2022,11 +1916,7 @@ contract SynthoraVault is
      *
      *      Units: PnL is in USDC (6-dec) matching `sizeUsd`.
      */
-    function _unrealisedPnL(Position memory pos, uint128 currentPrice)
-        internal
-        pure
-        returns (int256 pnl)
-    {
+    function _unrealisedPnL(Position memory pos, uint128 currentPrice) internal pure returns (int256 pnl) {
         if (pos.entryPrice == 0) return 0;
         int256 priceDelta = int256(uint256(currentPrice)) - int256(uint256(pos.entryPrice));
         if (!pos.isLong) priceDelta = -priceDelta;
@@ -2037,18 +1927,12 @@ contract SynthoraVault is
      * @dev Returns true when effective collateral < maintenance margin.
      *      Uses the SAME formula as `getPositionHealth` to avoid any discrepancy.
      */
-    function _isLiquidatable(Position memory pos, uint128 currentPrice)
-        internal
-        view
-        returns (bool)
-    {
-        int256 pnl             = _unrealisedPnL(pos, currentPrice);
-        int256 effectiveColl   = int256(uint256(pos.collateralUsd)) + pnl;
+    function _isLiquidatable(Position memory pos, uint128 currentPrice) internal view returns (bool) {
+        int256 pnl = _unrealisedPnL(pos, currentPrice);
+        int256 effectiveColl = int256(uint256(pos.collateralUsd)) + pnl;
         if (effectiveColl <= 0) return true;
 
-        uint256 maintenanceReq = pos.sizeUsd.mulDiv(
-            riskConfig.maintenanceMarginBps, BASIS_POINTS, Math.Rounding.Ceil
-        );
+        uint256 maintenanceReq = pos.sizeUsd.mulDiv(riskConfig.maintenanceMarginBps, BASIS_POINTS, Math.Rounding.Ceil);
         return uint256(effectiveColl) < maintenanceReq;
     }
 
@@ -2059,11 +1943,7 @@ contract SynthoraVault is
      *
      *      The function always returns a value within [minLeverageBps, maxDynamicLev].
      */
-    function _computeDynamicLeverage(
-        Position memory pos,
-        uint128 currentPrice,
-        int256  pnl
-    )
+    function _computeDynamicLeverage(Position memory pos, uint128 currentPrice, int256 pnl)
         internal
         view
         returns (uint32 newLev)
@@ -2073,9 +1953,7 @@ contract SynthoraVault is
 
         // --- Signal 1: drawdown-based deleveraging ---
         if (pnl < 0 && pos.collateralUsd > 0) {
-            uint256 lossRatioBps = uint256(-pnl).mulDiv(
-                BASIS_POINTS, pos.collateralUsd, Math.Rounding.Floor
-            );
+            uint256 lossRatioBps = uint256(-pnl).mulDiv(BASIS_POINTS, pos.collateralUsd, Math.Rounding.Floor);
             if (lossRatioBps >= 3_000) return risk.minLeverageBps; // >30% loss → 1×
             if (lossRatioBps >= 1_500) {
                 // >15% loss → reduce by 50%, floor at minLev
@@ -2087,20 +1965,16 @@ contract SynthoraVault is
         // --- Signal 2: volatility proxy (price deviation from entry) ---
         uint256 priceMovesBps;
         if (currentPrice > pos.entryPrice) {
-            priceMovesBps = uint256(currentPrice - pos.entryPrice).mulDiv(
-                BASIS_POINTS, pos.entryPrice, Math.Rounding.Floor
-            );
+            priceMovesBps =
+                uint256(currentPrice - pos.entryPrice).mulDiv(BASIS_POINTS, pos.entryPrice, Math.Rounding.Floor);
         } else {
-            priceMovesBps = uint256(pos.entryPrice - currentPrice).mulDiv(
-                BASIS_POINTS, pos.entryPrice, Math.Rounding.Floor
-            );
+            priceMovesBps =
+                uint256(pos.entryPrice - currentPrice).mulDiv(BASIS_POINTS, pos.entryPrice, Math.Rounding.Floor);
         }
 
         if (priceMovesBps >= 1_000) {
             // Reduce leverage proportionally to the price move beyond 10 %
-            uint256 scaleFactor = BASIS_POINTS > priceMovesBps / 10
-                ? BASIS_POINTS - priceMovesBps / 10
-                : 0;
+            uint256 scaleFactor = BASIS_POINTS > priceMovesBps / 10 ? BASIS_POINTS - priceMovesBps / 10 : 0;
             uint32 scaled = uint32(uint256(baseLev) * scaleFactor / BASIS_POINTS);
             baseLev = scaled > risk.minLeverageBps ? scaled : risk.minLeverageBps;
         }
@@ -2115,12 +1989,12 @@ contract SynthoraVault is
      */
     function _closePositionState(uint256 positionId, Position storage pos) internal {
         // Safely subtract — collateral / notional are always ≤ their global totals
-        totalCollateralLocked      -= pos.collateralUsd;
-        totalNotionalValue         -= pos.sizeUsd;
+        totalCollateralLocked -= pos.collateralUsd;
+        totalNotionalValue -= pos.sizeUsd;
         assetExposure[pos.assetId] -= pos.sizeUsd;
-        activePositionCount        -= 1;
+        activePositionCount -= 1;
 
-        pos.isActive            = false;
+        pos.isActive = false;
         pos.lastUpdateTimestamp = uint64(block.timestamp);
 
         // Clear owner mapping to release the storage slot eventually
@@ -2142,7 +2016,7 @@ contract SynthoraVault is
         if (assets == 0 || feeConfig.managementFeeBps == 0) return;
 
         uint256 annualFee = assets.mulDiv(feeConfig.managementFeeBps, BASIS_POINTS, Math.Rounding.Floor);
-        uint256 fee       = annualFee.mulDiv(elapsed, 365 days, Math.Rounding.Floor);
+        uint256 fee = annualFee.mulDiv(elapsed, 365 days, Math.Rounding.Floor);
 
         if (fee == 0) return;
 
@@ -2195,9 +2069,11 @@ contract SynthoraVault is
         bytes32, // assetId
         uint128, // sizeUsd
         uint128, // collateralUsd
-        bool,    // isLong
-        uint128  // entryPrice
-    ) internal pure {
+        bool, // isLong
+        uint128 // entryPrice
+    )
+        internal
+        pure {
         // No-op placeholder — replace entire body in production integration
     }
 
@@ -2208,8 +2084,10 @@ contract SynthoraVault is
     function _placeholderRouteClose(
         uint256, // positionId
         bytes32, // assetId
-        uint128  // exitPrice
-    ) internal pure {
+        uint128 // exitPrice
+    )
+        internal
+        pure {
         // No-op placeholder
     }
 
@@ -2220,8 +2098,10 @@ contract SynthoraVault is
     function _placeholderRouteLiquidate(
         uint256, // positionId
         bytes32, // assetId
-        uint128  // liquidationPrice
-    ) internal pure {
+        uint128 // liquidationPrice
+    )
+        internal
+        pure {
         // No-op placeholder
     }
 
@@ -2242,11 +2122,7 @@ contract SynthoraVault is
      *
      * @param newImplementation Address of the new logic contract
      */
-    function _authorizeUpgrade(address newImplementation)
-        internal
-        override
-        requireRole(UPGRADER_ROLE)
-    {
+    function _authorizeUpgrade(address newImplementation) internal override requireRole(UPGRADER_ROLE) {
         if (newImplementation == address(0)) revert ZeroAddress();
         // Optionally: require IVersioned(newImplementation).version() > VERSION
     }
